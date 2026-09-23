@@ -1,6 +1,6 @@
 """Minimal Source RCON client, as Minecraft speaks it."""
 from __future__ import annotations
-import socket, struct
+import socket, struct, threading
 
 LOGIN, CMD = 3, 2
 
@@ -67,6 +67,43 @@ class Rcon:
             pass
 
 
+class Pool:
+    """One long-lived connection per server. Minecraft logs a "Thread RCON Client started / shutting down" pair for
+    every connection, so reconnecting every minute would fill its log. Thread-safe: the sampler and the console share
+    it. A broken connection is replaced once per command."""
+
+    def __init__(self):
+        self.conns: dict[tuple[str, int], Rcon] = {}
+        self.locks: dict[tuple[str, int], threading.Lock] = {}
+        self.guard = threading.Lock()
+
+    def command(self, port: int, password: str, line: str, host: str = "127.0.0.1") -> str:
+        key = (host, port)
+        with self.guard:
+            lock = self.locks.setdefault(key, threading.Lock())
+        with lock:
+            for attempt in (1, 2):
+                conn = self.conns.get(key)
+                try:
+                    if conn is None:
+                        conn = self.conns[key] = Rcon(host, port, password)
+                    return conn.command(line)
+                except (OSError, RconError):
+                    if conn:
+                        conn.close()
+                    self.conns.pop(key, None)
+                    if attempt == 2:
+                        raise
+        raise RconError("unreachable")
+
+    def drop(self, port: int, host: str = "127.0.0.1") -> None:
+        conn = self.conns.pop((host, port), None)
+        if conn:
+            conn.close()
+
+
+pool = Pool()
+
+
 def run(port: int, password: str, line: str, host: str = "127.0.0.1") -> str:
-    with Rcon(host, port, password) as r:
-        return r.command(line)
+    return pool.command(port, password, line, host)

@@ -2,7 +2,7 @@
 players are followed through its journal (handshake → character → closing socket)."""
 from __future__ import annotations
 import json, re, subprocess, time
-from ..rcon import RconError, run as rcon
+from ..rcon import RconError, pool
 
 LIST_RE = re.compile(r"There are (\d+) of a max of (\d+) players online:?\s*(.*)", re.S)
 MC_VERSION_RE = re.compile(r"Starting minecraft server version (\S+)")
@@ -179,13 +179,14 @@ class Games:
             snap["loader"] = meta.get("loader")
         prev = self.mc_players.get(g.id, [])
         if not snap["running"]:
+            pool.drop(g.rcon_port)
             self.mc_players[g.id] = []
             return [("leave", p) for p in prev]
         if not g.rcon_port or not g.rcon_password:
             snap["error"] = "RCON not configured"
             return []
         try:
-            parsed = parse_list(rcon(g.rcon_port, g.rcon_password, "list"))
+            parsed = parse_list(pool.command(g.rcon_port, g.rcon_password, "list"))
         except (OSError, RconError) as e:
             snap["error"] = "starting up" if u.get("since") and _recent(u["since"]) else f"RCON: {e}"
             return []

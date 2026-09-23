@@ -33,6 +33,23 @@ uv run pytest -q
 HEARTH_CONFIG=/path/to/dev-config.toml uv run uvicorn --factory hearth.main:app --port 8010
 ```
 
+## The app
+
+`ios/` is an Expo (React Native) app, SDK 57. It has four tabs. Overview answers "is everything fine?" in one line, then shows CPU, memory, disk, temperature, network and power tiles, the game servers and links to Network and Backups. Services lists every unit by group. Games shows who's online on each server. Activity is a feed of joins, leaves and services starting or stopping. Every chart can be scrubbed with a finger, like the Stocks app. `ios/DESIGN.md` explains the design decisions.
+
+```bash
+cd ios
+npm install
+echo 'EXPO_PUBLIC_HEARTH_URL=https://<server>.<tailnet>.ts.net:8446' > .env.local   # never committed
+npx expo start --port 8083
+```
+
+**On my iPhone with Expo Go:** open Expo Go and enter `exp://<server's Tailscale IP>:8083`. The phone needs Tailscale on. The first launch asks for the token.
+
+**As a real app (free Apple ID):** on the Mac with Xcode, `npx expo run:ios --device --configuration Release`, and pick my Personal Team for signing if Xcode asks. Apps signed this way stop opening after 7 days; running the same command again re-signs it.
+
+**Web preview (for checking layouts on the server):** `npx expo start --web --port 8083`, plus `HEARTH_TOKEN=$(sudo cat /etc/hearth/token) HEARTH_LOGIN=<owner> node scripts/preview.mjs`, then open `http://127.0.0.1:8091`. The preview script adds the credentials the phone would send, and it only listens on localhost.
+
 ## API
 
 Everything is `GET` and JSON under `/api`: `overview`, `system`, `issues`, `services`, `services/{unit}` (with recent journal lines), `games`, `games/{id}`, `network`, `backups`, `history?key=cpu&range=24h` (ranges 1h, 6h, 24h, 7d, 30d and 90d), `events` and `audit`. `/api/ping` is the only route that doesn't need auth.

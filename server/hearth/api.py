@@ -67,7 +67,7 @@ def overview(request: Request, who: Who):
         "temps": sysm.get("temps"),
         "battery": sysm.get("battery"),
         "network": sysm.get("network"),
-        "spark": {k: spark(db, k) for k in ("cpu", "ram", "temp", "net_rx", "net_tx")},
+        "spark": {k: spark(db, k) for k in ("cpu", "ram", "disk", "temp", "net_rx", "net_tx", "battery")},
         "services": counts,
         "games": [{k: g.get(k) for k in ("id", "name", "kind", "running", "health", "since", "version",
                                          "max_players")} | {"players": len(g["players"])} for g in st.games or []],

@@ -1,0 +1,51 @@
+{
+  "expo": {
+    "name": "Hearth",
+    "slug": "hearth",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "hearth",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "bundleIdentifier": "com.anthonyradke.hearth",
+      "supportsTablet": false,
+      "icon": {
+        "light": "./assets/icon.png",
+        "dark": "./assets/icon-dark.png",
+        "tinted": "./assets/icon-tinted.png"
+      },
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "package": "com.anthonyradke.hearth",
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "output": "single",
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#F2F2F7",
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 96,
+          "dark": {
+            "backgroundColor": "#000000",
+            "image": "./assets/splash-icon-dark.png"
+          }
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    }
+  }
+}
