@@ -1,5 +1,6 @@
 import { RefreshControl, ScrollView, View } from 'react-native'
 import { Stack, useLocalSearchParams } from 'expo-router'
+import { Controls } from '@/components/Controls'
 import { Dot } from '@/components/Dot'
 import { Journal } from '@/components/Journal'
 import { MetricChart } from '@/components/MetricChart'
@@ -51,6 +52,8 @@ function Body({ s }: { s: ServiceDetail }) {
             : s.since ? `${s.health === 'ok' ? 'Since' : 'Since'} ${when(s.since)} (${span(Date.now() / 1000 - s.since)})` : s.description}
         </Txt>
       </View>
+
+      {!timer && <Controls unit={s.unit} name={s.name} actions={s.actions} health={s.health} />}
 
       {running && s.memory != null && <MetricChart title="Memory" metric={`mem:${s.unit}`} format={(v) => bytes(v)} now={s.memory} />}
 

@@ -33,6 +33,7 @@ export default function TabStack() {
       <Stack.Screen name="network" options={{ title: 'Network' }} />
       <Stack.Screen name="backups" options={{ title: 'Backups' }} />
       <Stack.Screen name="settings" options={{ title: 'Settings' }} />
+      <Stack.Screen name="lists/[id]" options={{ title: '' }} />
     </Stack>
   )
 }

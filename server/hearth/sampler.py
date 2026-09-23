@@ -42,6 +42,7 @@ class Sampler:
         self.services = Services(cfg.services)
         self.games = Games(cfg.games, db)
         self.pihole = network.PiHole(cfg.pihole_url, cfg.pihole_password)
+        self.lock = threading.Lock()  # jobs run one at a time, whether from the loop or an API request
         self.stop_event = threading.Event()
         self.thread: threading.Thread | None = None
         iv = cfg.sample
@@ -120,6 +121,11 @@ class Sampler:
         if self.cfg.alerts.heartbeat_url:
             self.state.heartbeat = {"ok": heartbeat(self.cfg.alerts.heartbeat_url), "ts": int(time.time())}
 
+    def refresh_services(self) -> None:
+        """Called right after an action, so the answer carries the new state."""
+        with self.lock:
+            self.do_services()
+
     # ---------- loop ----------
     def tick(self, now: float | None = None) -> None:
         """Runs every job that's due. Separate from the loop so tests can drive it."""
@@ -130,7 +136,8 @@ class Sampler:
                 continue
             self.due[name] = now + interval
             try:
-                fn()
+                with self.lock:
+                    fn()
                 self.state.errors.pop(name, None)
                 self.state.updated[name] = int(time.time())
             except Exception as e:  # one broken collector must not stop the others

@@ -4,6 +4,7 @@ import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from . import __version__, config
+from .actions import router as actions_router
 from .api import router
 from .auth import load_token
 from .db import DB
@@ -28,6 +29,7 @@ def create_app(cfg: config.Config | None = None, db: DB | None = None, start: bo
     app.state.alerts = Alerts(cfg, db)
     app.state.sampler = Sampler(cfg, db, alerts=app.state.alerts)
     app.include_router(router)
+    app.include_router(actions_router)
     return app
 
 

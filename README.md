@@ -52,4 +52,13 @@ npx expo start --port 8083
 
 ## API
 
-Everything is `GET` and JSON under `/api`: `overview`, `system`, `issues`, `services`, `services/{unit}` (with recent journal lines), `games`, `games/{id}`, `network`, `backups`, `history?key=cpu&range=24h` (ranges 1h, 6h, 24h, 7d, 30d and 90d), `events` and `audit`. `/api/ping` is the only route that doesn't need auth.
+JSON under `/api`. `/api/ping` is the only route that doesn't need auth.
+
+- Reading: `overview`, `system`, `issues`, `services`, `services/{unit}` (with recent journal lines), `games`, `games/{id}`, `network`, `backups`, `history?key=cpu&range=24h` (ranges 1h, 6h, 24h, 7d, 30d and 90d), `events`, `alerts` and `audit`.
+- Changing things: `POST services/{unit}/{start|stop|restart}` (only what the config allows for that unit), `POST games/{id}/rcon` for Minecraft console commands, `GET/POST/DELETE games/{id}/lists/...` for Valheim's admin, permitted and banned lists, and `POST alerts/test`. Every attempt lands in the audit log, including refused ones.
+
+## Alerts
+
+Each rule (a unit that should be running isn't, disk, memory, CPU temperature, running on battery, Tailscale key expiry, a failed or stale backup, Pi-hole not answering) has to hold for a grace period before it's sent. That's 90 seconds for critical and 5 minutes for warnings, so a quick restart never pages me. Each alert goes out once through [ntfy](https://ntfy.sh), again every 6 hours while it's still critical, and then a "Resolved" message once it clears. During quiet hours, warnings wait until morning and are dropped if they clear before then. Critical alerts always go out. The messages stay vague on purpose, because anyone with the topic can read them.
+
+The server can't report its own death, so Hearth also pings a [healthchecks.io](https://healthchecks.io) check every minute. When the pings stop, healthchecks.io sends the alert.

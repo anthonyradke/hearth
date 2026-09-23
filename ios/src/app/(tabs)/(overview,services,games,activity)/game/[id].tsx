@@ -3,6 +3,7 @@ import { RefreshControl, ScrollView, View } from 'react-native'
 import { Stack, useLocalSearchParams } from 'expo-router'
 import * as Clipboard from 'expo-clipboard'
 import * as Haptics from 'expo-haptics'
+import { Controls } from '@/components/Controls'
 import { Dot } from '@/components/Dot'
 import { Icon } from '@/components/Icon'
 import { MetricChart } from '@/components/MetricChart'
@@ -10,7 +11,7 @@ import { Group, Row } from '@/components/Row'
 import { StaleBanner, StateView } from '@/components/StateView'
 import { Txt } from '@/components/Txt'
 import type { GameDetail } from '@/lib/api'
-import { useGame, usePull } from '@/lib/data'
+import { useGame, usePull, useServices } from '@/lib/data'
 import { bytes, span, when } from '@/lib/format'
 import { gameLabel, healthColor } from '@/lib/status'
 import { space, useTheme } from '@/theme'
@@ -34,6 +35,7 @@ export default function GameScreen() {
 
 function Body({ g }: { g: GameDetail }) {
   const { c } = useTheme()
+  const svc = useServices().data?.services.find((s) => s.unit === g.unit)
   const [copied, setCopied] = useState(false)
   const copy = () => {
     if (!g.address) return
@@ -54,6 +56,23 @@ function Body({ g }: { g: GameDetail }) {
         </Txt>
       </View>
 
+      {svc && <Controls unit={g.unit} name={g.name} actions={svc.actions} health={g.health} players={g.players.map((p) => p.name)} />}
+
+      {g.kind === 'minecraft' && (
+        <Group>
+          <Row label="Console" sf="terminal" md="terminal" href={`/console/${g.id}` as never}
+            sub={g.running ? 'Run server commands: whitelist, op, time, weather' : 'Start the server to use it'} />
+        </Group>
+      )}
+      {g.kind === 'valheim' && (
+        <Group header="Player lists" footer="Valheim reads these lists when it starts, so changes can need a restart to take effect.">
+          <Row label="Admins" sf="star" md="star" href={`/lists/${g.id}?list=admin` as never} />
+          <Row label="Allowed players" sf="checkmark.shield" md="verified_user" href={`/lists/${g.id}?list=permitted` as never}
+            sub="If anyone is listed, only they can join" />
+          <Row label="Banned" sf="nosign" md="block" href={`/lists/${g.id}?list=banned` as never} />
+        </Group>
+      )}
+
       <Group header={g.running ? `Online now${g.max_players ? ` (max ${g.max_players})` : ''}` : 'Players'}>
         {!g.running ? <Row label="The server is stopped" /> :
           g.players.length === 0 ? <Row label="Nobody’s on" sub={g.error ?? undefined} /> :
@@ -63,7 +82,7 @@ function Body({ g }: { g: GameDetail }) {
           ))}
       </Group>
 
-      <MetricChart title="Players" metric={`players:${g.id}`} format={(v) => (Math.round(v * 10) / 10).toString()}
+      <MetricChart title="Players over time" metric={`players:${g.id}`} format={(v) => (Math.round(v * 10) / 10).toString()}
         now={g.running ? g.players.length : null} span={3} initial="7d" />
 
       <Group header="Server">

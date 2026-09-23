@@ -6,6 +6,7 @@ import * as SplashScreen from 'expo-splash-screen'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persister'
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client'
+import { Toaster } from '@/components/Toaster'
 import { queryClient } from '@/lib/data'
 import { loadServer, useServer } from '@/lib/server'
 import { useTheme } from '@/theme'
@@ -24,6 +25,14 @@ function RootStack() {
     <Stack screenOptions={{ contentStyle: { backgroundColor: c.bg }, headerShown: false }}>
       <Stack.Protected guard={connected}>
         <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="console/[id]" options={{
+          presentation: 'formSheet', sheetAllowedDetents: [0.75, 1], sheetGrabberVisible: true,
+          contentStyle: { backgroundColor: c.bg },
+        }} />
+        <Stack.Screen name="add-player/[id]" options={{
+          presentation: 'formSheet', sheetAllowedDetents: [0.6, 1], sheetGrabberVisible: true,
+          contentStyle: { backgroundColor: c.bg },
+        }} />
       </Stack.Protected>
       <Stack.Protected guard={!connected}>
         <Stack.Screen name="connect" />
@@ -43,6 +52,7 @@ export default function RootLayout() {
         persistOptions={{ persister, maxAge: 1000 * 60 * 60 * 24 * 7, buster: 'v1' }}>
         <ThemeProvider value={scheme === 'dark' ? DarkTheme : DefaultTheme}>
           <RootStack />
+          <Toaster />
         </ThemeProvider>
       </PersistQueryClientProvider>
     </GestureHandlerRootView>
