@@ -7,6 +7,7 @@ from . import __version__, config
 from .api import router
 from .auth import load_token
 from .db import DB
+from .alerts import Alerts
 from .sampler import Sampler
 
 
@@ -24,7 +25,8 @@ def create_app(cfg: config.Config | None = None, db: DB | None = None, start: bo
     app = FastAPI(title="Hearth", version=__version__, lifespan=lifespan, docs_url=None, redoc_url=None)
     app.state.cfg, app.state.db = cfg, db
     app.state.token = load_token(cfg.token_file)
-    app.state.sampler = Sampler(cfg, db)
+    app.state.alerts = Alerts(cfg, db)
+    app.state.sampler = Sampler(cfg, db, alerts=app.state.alerts)
     app.include_router(router)
     return app
 

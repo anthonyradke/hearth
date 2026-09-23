@@ -27,6 +27,7 @@ export const useNetwork = () => useQuery({ queryKey: ['network'], queryFn: api.n
 export const useBackups = () => useQuery({ queryKey: ['backups'], queryFn: api.backups, refetchInterval: 60_000 })
 export const useEvents = () => useQuery({ queryKey: ['events'], queryFn: () => api.events(), refetchInterval: 30_000 })
 export const useAudit = () => useQuery({ queryKey: ['audit'], queryFn: api.audit, refetchInterval: 30_000 })
+export const useAlerts = () => useQuery({ queryKey: ['alerts'], queryFn: api.alerts, refetchInterval: 30_000 })
 
 /** Short ranges refresh with the samples (30 s); long ones barely change. */
 export const useHistory = (key: string, range: Range, enabled = true) =>

@@ -117,3 +117,17 @@ flap_restarts = 3
 flap_minutes = 15
 tailscale_expiry_days = 14
 backup_max_age_hours = 36
+
+# Notifications through ntfy (the free ntfy iOS app, subscribed to the same topic). Use a long random topic: anyone
+# who knows it can read the messages, which is why they stay vague ("valheim is down", never IPs or names).
+[alerts]
+ntfy_url = "https://ntfy.sh"
+ntfy_topic = ""
+title = "Hearth"
+quiet_hours = "23:00-08:00"   # warnings wait until morning; critical alerts always go out
+timezone = "America/Denver"
+grace_critical = 90           # seconds an issue has to last before it's sent
+grace_warning = 300
+remind_hours = 6              # repeat critical alerts while they last (0 = never)
+# healthchecks.io ping URL. Pinged every minute; healthchecks.io alerts you when the pings stop (server down).
+heartbeat_url = ""

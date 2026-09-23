@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging, threading, time
 from dataclasses import dataclass, field
 from . import rules
+from .alerts import heartbeat
 from .collectors import backups, network
 from .collectors.games import Games
 from .collectors.services import Services
@@ -24,6 +25,7 @@ class State:
     public_ip: dict | None = None
     issues: list[dict] = field(default_factory=list)
     errors: dict[str, str] = field(default_factory=dict)
+    heartbeat: dict | None = None
     updated: dict[str, int] = field(default_factory=dict)
     started: int = field(default_factory=lambda: int(time.time()))
 
@@ -35,7 +37,7 @@ class Sampler:
     def __init__(self, cfg, db, state: State | None = None, alerts=None):
         self.cfg, self.db = cfg, db
         self.state = state or State()
-        self.alerts = alerts  # phase 3: called with the issue list after every evaluation
+        self.alerts = alerts  # called with the issue list after every evaluation; .event() for one-offs
         self.system = System(cfg.disks)
         self.services = Services(cfg.services)
         self.games = Games(cfg.games, db)
@@ -51,6 +53,7 @@ class Sampler:
             ("backups", iv["network"], self.do_backups),
             ("public_ip", iv["public_ip"], self.do_public_ip),
             ("rollup", 300, self.db.rollup),
+            ("heartbeat", cfg.alerts.heartbeat_seconds, self.do_heartbeat),
         ]
         self.due = {name: 0.0 for name, _, _ in self.jobs}
         self.prev_health: dict[str, tuple[str, str | None]] = {}
@@ -104,12 +107,18 @@ class Sampler:
         if ip:
             if prev and prev.get("ip") != ip:
                 self.db.event("ip", "public", f"{prev.get('ip')} → {ip}")
+                if self.alerts:
+                    self.alerts.event("ip")
                 prev = {"ip": ip, "since": now}
             elif not prev:
                 prev = {"ip": ip, "since": now}
             prev["checked"] = now
             self.db.put("public_ip", prev)
         self.state.public_ip = {**(prev or {}), "reachable": ip is not None}
+
+    def do_heartbeat(self):
+        if self.cfg.alerts.heartbeat_url:
+            self.state.heartbeat = {"ok": heartbeat(self.cfg.alerts.heartbeat_url), "ts": int(time.time())}
 
     # ---------- loop ----------
     def tick(self, now: float | None = None) -> None:
@@ -127,7 +136,7 @@ class Sampler:
             except Exception as e:  # one broken collector must not stop the others
                 log.exception("collector %s failed", name)
                 self.state.errors[name] = f"{type(e).__name__}: {e}"
-            ran = ran or name != "rollup"
+            ran = ran or name not in ("rollup", "heartbeat")
         if ran:
             self.state.issues = rules.evaluate(self.state, self.cfg, self.db)
             if self.alerts:

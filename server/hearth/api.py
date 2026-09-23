@@ -159,3 +159,24 @@ def events(request: Request, who: Who, limit: int = Query(100, ge=1, le=500), be
 @router.get("/audit")
 def audit(request: Request, who: Who, limit: int = Query(100, ge=1, le=500), before: int | None = None):
     return {"audit": _db(request).audits(limit, before)}
+
+
+@router.get("/alerts")
+def alerts(request: Request, who: Who, limit: int = Query(100, ge=1, le=500)):
+    a = request.app.state.alerts
+    c = _cfg(request).alerts
+    return {"alerts": a.history(limit), "ntfy": {"url": c.ntfy_url, "topic": c.ntfy_topic} if c.ntfy_topic else None,
+            "heartbeat": _st(request).heartbeat,
+            "quiet_hours": c.quiet_hours or None}
+
+
+@router.post("/alerts/test")
+def alerts_test(request: Request, who: Who):
+    a = request.app.state.alerts
+    if not a.ntfy.configured:
+        raise HTTPException(409, "ntfy isn't set up yet: add a topic under [alerts] in the config")
+    ok = a.test()
+    _db(request).audit(who, "test-notification", "ntfy", "ok" if ok else "failed")
+    if not ok:
+        raise HTTPException(502, "ntfy didn't accept the message")
+    return {"ok": True}

@@ -84,6 +84,8 @@ export interface Backups {
 export type Range = '1h' | '6h' | '24h' | '7d' | '30d' | '90d'
 /** [ts, avg, min, max] */
 export type Point = [number, number, number, number]
+export interface Alert { id: number; rule: string; severity: 'critical' | 'warning'; title: string; detail: string; started: number; ended: number | null; notified: number }
+export interface AlertsInfo { alerts: Alert[]; ntfy: { url: string; topic: string } | null; heartbeat: { ok: boolean; ts: number } | null; quiet_hours: string | null }
 export interface Audit { id: number; ts: number; who: string; action: string; target: string; result: string; detail: string }
 
 export class ApiError extends Error {
@@ -130,4 +132,6 @@ export const api = {
     call<{ key: string; range: Range; points: Point[] }>('GET', `/history?key=${encodeURIComponent(key)}&range=${range}`),
   events: (before?: number) => call<{ events: Event[] }>('GET', `/events?limit=100${before ? `&before=${before}` : ''}`),
   audit: () => call<{ audit: Audit[] }>('GET', '/audit'),
+  alerts: () => call<AlertsInfo>('GET', '/alerts'),
+  testAlert: () => call<{ ok: true }>('POST', '/alerts/test'),
 }

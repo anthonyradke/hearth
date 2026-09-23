@@ -42,6 +42,21 @@ class Rules:
 
 
 @dataclass
+class AlertsCfg:
+    ntfy_url: str = "https://ntfy.sh"
+    ntfy_topic: str = ""
+    ntfy_token: str = ""
+    title: str = "Hearth"
+    quiet_hours: str = ""          # "23:00-08:00": warnings wait until the end; critical alerts always go out
+    timezone: str = "UTC"
+    grace_critical: float = 90     # seconds an issue must last before it's sent
+    grace_warning: float = 300
+    remind_hours: float = 6        # repeat critical alerts this often while they last (0 = never)
+    heartbeat_url: str = ""        # healthchecks.io ping URL
+    heartbeat_seconds: int = 60
+
+
+@dataclass
 class Config:
     owner: str = ""
     db: str = "/var/lib/hearth/hearth.db"
@@ -56,6 +71,7 @@ class Config:
     cellar_status: str = "/var/lib/cellar/status.json"
     public_ip_url: str = "https://api.ipify.org"
     rules: Rules = field(default_factory=Rules)
+    alerts: AlertsCfg = field(default_factory=AlertsCfg)
 
     def service(self, unit: str) -> Service | None:
         return next((s for s in self.services if s.unit == unit), None)
@@ -84,6 +100,7 @@ def parse(raw: dict) -> Config:
     c.cellar_status = raw.get("cellar", {}).get("status", c.cellar_status)
     c.public_ip_url = raw.get("public_ip", {}).get("url", c.public_ip_url)
     c.rules = Rules(**raw.get("rules", {}))
+    c.alerts = AlertsCfg(**raw.get("alerts", {}))
     return c
 
 
