@@ -1,0 +1,119 @@
+# Hearth config. Installed as /etc/hearth/config.toml (root:hearth 640). Everything machine-specific lives here,
+# never in the repo.
+
+# The Tailscale login allowed to use the API. Tailscale Serve adds a Tailscale-User-Login header to every request
+# from a tailnet device; requests without this exact value are refused. Leave empty to turn the check off (tests,
+# local development only).
+owner = "you@github"
+
+db = "/var/lib/hearth/hearth.db"
+token_file = "/etc/hearth/token"
+
+# Mount points to watch.
+disks = ["/"]
+
+# Seconds between samples.
+[sample]
+system = 30
+services = 30
+games = 60
+network = 60
+public_ip = 600
+
+# Every unit Hearth knows about. group is the section it's listed under in the app. actions: none | restart | full
+# (start/stop/restart). Units that would cut the app off (ssh, tailscaled, the Hearth host itself) should stay none.
+# cgroup: read CPU and memory from another cgroup instead of the unit's own (a glob; for units that start a
+# container, whose processes live in docker-<id>.scope).
+[[service]]
+unit = "ssh"
+name = "SSH"
+group = "Network"
+actions = "none"
+
+[[service]]
+unit = "tailscaled"
+name = "Tailscale"
+group = "Network"
+actions = "none"
+
+[[service]]
+unit = "pihole-FTL"
+name = "Pi-hole"
+group = "Network"
+actions = "restart"
+
+[[service]]
+unit = "minecraft"
+name = "Minecraft"
+group = "Games"
+actions = "full"
+
+[[service]]
+unit = "valheim"
+name = "Valheim"
+group = "Games"
+actions = "full"
+
+[[service]]
+unit = "some-web-app"
+name = "Web app"
+group = "Apps"
+actions = "restart"
+
+[[service]]
+unit = "remote-desktop"
+name = "Remote desktop"
+group = "Desktop"
+actions = "full"
+cgroup = "/sys/fs/cgroup/system.slice/docker-*.scope"
+
+[[service]]
+unit = "cellar-backup.timer"
+name = "Nightly backup"
+group = "Backups"
+actions = "none"
+
+# Game servers. unit must also be listed under [[service]]. address is what the app shows and copies.
+[[game]]
+id = "mc1"
+kind = "minecraft"
+name = "My world"
+unit = "minecraft"
+address = "example.com:25565"
+rcon_port = 25575
+rcon_password = ""
+
+[[game]]
+id = "valheim"
+kind = "valheim"
+name = "My Valheim world"
+unit = "valheim"
+address = "example.com:2456"
+# Folder holding adminlist.txt, permittedlist.txt and bannedlist.txt.
+lists_dir = "/home/you/.config/unity3d/IronGate/Valheim"
+
+[pihole]
+url = "http://127.0.0.1"
+# An app password (Settings → Web interface / API → Configure app password), not the admin password.
+# Empty = the Pi-hole card shows "not configured".
+password = ""
+
+[cellar]
+status = "/var/lib/cellar/status.json"
+
+# Where the public IP is looked up.
+[public_ip]
+url = "https://api.ipify.org"
+
+# Alert thresholds.
+[rules]
+disk_warn = 85
+disk_crit = 95
+ram_pct = 90
+ram_minutes = 5
+temp_c = 90
+battery_low = 30
+flap_restarts = 3
+flap_minutes = 15
+tailscale_expiry_days = 14
+backup_max_age_hours = 36

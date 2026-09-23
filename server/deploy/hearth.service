@@ -1,0 +1,44 @@
+[Unit]
+Description=Hearth (server status, history and controls)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=hearth
+Group=hearth
+SupplementaryGroups=systemd-journal
+Environment=HEARTH_CONFIG=/etc/hearth/config.toml
+WorkingDirectory=/opt/hearth/app
+ExecStart=/opt/hearth/venv/bin/uvicorn --factory hearth.main:app --host 127.0.0.1 --port 8010 --no-access-log
+Restart=on-failure
+RestartSec=5
+StateDirectory=hearth
+StateDirectoryMode=0750
+
+# Hardening. It reads /proc, /sys and the journal, talks to systemd and polkit over D-Bus and to tailscaled over its
+# socket, and only writes its own database (plus, when actions are on, the three Valheim list files).
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=no
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+UMask=0027
+MemoryMax=512M
+Nice=5
+
+[Install]
+WantedBy=multi-user.target
