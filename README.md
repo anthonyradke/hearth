@@ -46,7 +46,9 @@ npx expo start --port 8083
 
 **On my iPhone with Expo Go:** open Expo Go and enter `exp://<server's Tailscale IP>:8083`. The phone needs Tailscale on. The first launch asks for the token.
 
-**As a real app (free Apple ID):** on the Mac with Xcode, `npx expo run:ios --device --configuration Release`, and pick my Personal Team for signing if Xcode asks. Apps signed this way stop opening after 7 days; running the same command again re-signs it.
+**As a real app (free Apple ID):** on the Mac with Xcode, `npx expo run:ios --device --configuration Release` with the iPhone plugged in and `.env.local` in place. The first time, I had to sign Xcode into my Apple ID, pick my Personal Team under Signing & Capabilities in `ios/ios/Hearth.xcworkspace`, and trust the profile on the phone under Settings › General › VPN & Device Management.
+
+**Re-signing every 7 days:** a free Apple ID only signs apps for 7 days, and after that Hearth won't open. To fix it, I plug the phone in, unlock it and run the same command again from `ios/`. It rebuilds, re-signs and installs over the old copy, so the token and cached data stay, and the profile doesn't need trusting again. If signing fails, I check that my Apple ID is still signed in under Xcode › Settings › Apple Accounts.
 
 **Web preview (for checking layouts on the server):** `npx expo start --web --port 8083`, plus `HEARTH_TOKEN=$(sudo cat /etc/hearth/token) HEARTH_LOGIN=<owner> node scripts/preview.mjs`, then open `http://127.0.0.1:8091`. The preview script adds the credentials the phone would send, and it only listens on localhost.
 
