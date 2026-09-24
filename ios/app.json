@@ -41,7 +41,8 @@
             "image": "./assets/splash-icon-dark.png"
           }
         }
-      ]
+      ],
+      "./plugins/with-scene-delegate"
     ],
     "experiments": {
       "typedRoutes": true,
