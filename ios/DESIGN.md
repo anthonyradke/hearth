@@ -83,6 +83,18 @@ sheet opens for something that kicks players; error when an action is refused.
   not configured ("Add a Pi-hole app password to /etc/hearth/config.toml").
 - **Error:** inline, specific: "Refused: the token is wrong", "Can't reach Hearth: is Tailscale on?"
 
+## Icon
+- **The app icon: a flame inside a ring of 40 status dots**, 34 of them lit from yellow at the top to red, like an
+  uptime ring that's almost full. It has warm cream and ember-dark versions for light and dark mode, plus a white
+  tinted one. The icon is the one place with gradients and warm color: it has to be spotted on a home screen, and
+  inside the app the no-decorative-color rule still holds.
+- The flame is centred by its centre of mass, not its outline. Most of its weight is in the round base, so
+  centring the outline made it look like it was sinking in the ring.
+- **Kept for later: the uptime ring**, the same flame inside a solid, almost-closed gradient ring (like an Activity
+  ring). It's bolder and reads better at 30 px. `node scripts/icons.mjs uptime` switches the app to it.
+  Previews of both rings in light and dark are in `design/icons/`.
+- `scripts/icons.mjs` renders all of it: the light, dark and tinted icons, the splash marks and the favicon.
+
 ## Open questions
 - Whether a home screen widget (WidgetKit) would be worth doing later. It needs a native target, so it's out of scope
   for the Expo app for now.

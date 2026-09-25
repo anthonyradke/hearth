@@ -1,20 +1,62 @@
-// Renders the app icon (a flame inside a hearth's arch, paper on black, a sibling to Tally's mark) and the splash
-// mark. Run after changing the mark: node scripts/icons.mjs
+// Renders the app icon and splash mark: a flame inside a ring of status dots, like an uptime ring that's almost full.
+// Run after changing the mark: node scripts/icons.mjs
+// `node scripts/icons.mjs uptime` renders the solid-ring alternative into the app instead (see DESIGN.md). Either
+// way, light and dark previews of both rings are written to design/icons/.
 import sharp from 'sharp'
+import fs from 'node:fs'
 
-const mark = (color) => `
-  <path d="M252 780 V470 A260 260 0 0 1 772 470 V780" stroke="${color}" stroke-width="64" stroke-linecap="round"
-    stroke-linejoin="round" fill="none"/>
-  <path d="M512 404 C560 478 628 520 628 610 C628 680 576 732 512 732 C448 732 396 680 396 610 C396 560 424 530 450 500
-    C458 540 476 560 500 566 C488 510 486 456 512 404 Z" fill="${color}"/>
-  <line x1="200" y1="780" x2="824" y2="780" stroke="${color}" stroke-width="64" stroke-linecap="round"/>`
-const svg = (bg, color) => `<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
-  ${bg ? `<rect width="1024" height="1024" fill="${bg}"/>` : ''}${mark(color)}</svg>`
+const style = process.argv[2] === 'uptime' ? 'uptime' : 'led'
 
-const out = async (file, s, size = 1024) => { await sharp(Buffer.from(s)).resize(size, size).png().toFile(`assets/${file}`); console.log(file) }
-await out('icon.png', svg('#000000', '#f4f2ee'))                 // iOS flattens this; no transparency allowed
-await out('icon-dark.png', svg(null, '#f4f2ee'))                 // iOS 18+ dark icon: transparent background
-await out('icon-tinted.png', svg(null, '#ffffff'))               // iOS 18+ tinted icon: white on transparent
-await out('splash-icon.png', svg(null, '#000000'), 512)
-await out('splash-icon-dark.png', svg(null, '#f4f2ee'), 512)
-await out('favicon.png', svg('#000000', '#f4f2ee'), 48)
+// The flame is placed by its centre of mass (520, 572 in its own space), not its bounding box: most of its weight
+// is in the round base, so box-centring made it look like it was sinking in the ring.
+const flame = `M512 190 C560 300 720 400 720 600 C720 730 625 830 512 830 C399 830 304 730 304 600 C304 500 360 440
+  400 400 C405 470 430 520 470 540 C450 430 460 300 512 190 Z`
+const R = 330
+
+const themes = {
+  dark: { bg: ['#3a1608', '#140905', '#070302'], track: '#2a1510', ring: ['#ffd166', '#ff3b30'], fire: ['#ffe08a', '#ff5a1f'], glow: true },
+  light: { bg: ['#fffaf3', '#f6efe6', '#ece2d6'], track: '#e6dacd', ring: ['#ffb02e', '#ff3b30'], fire: ['#ffb347', '#ff5a1f'], glow: false },
+  tinted: { track: '#ffffff40', ring: ['#ffffff', '#ffffff'], fire: ['#ffffff', '#ffffff'], glow: false },
+}
+
+const hex = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16))
+const mix = (a, b, t) => `rgb(${hex(a).map((v, i) => Math.round(v + (hex(b)[i] - v) * t)).join(',')})`
+
+// 40 dots clockwise from the top, the last 6 unlit
+const ledRing = (t) => Array.from({ length: 40 }, (_, k) => {
+  const a = -Math.PI / 2 + (k / 40) * 2 * Math.PI, lit = k < 34
+  const fill = lit ? mix(t.ring[0], t.ring[1], k / 33) : t.track
+  return `<circle cx="${(512 + R * Math.cos(a)).toFixed(1)}" cy="${(512 + R * Math.sin(a)).toFixed(1)}" r="21"
+    fill="${fill}"${lit && t.glow ? ' filter="url(#glow)"' : ''}/>`
+}).join('')
+
+const uptimeRing = (t) => `
+  <circle cx="512" cy="512" r="${R}" fill="none" stroke="${t.track}" stroke-width="64"/>
+  <circle cx="512" cy="512" r="${R}" fill="none" stroke="url(#ring)" stroke-width="64" stroke-linecap="round"
+    stroke-dasharray="${2 * Math.PI * R * 0.86} ${2 * Math.PI * R}" transform="rotate(-90 512 512)"${t.glow ? ' filter="url(#glow)"' : ''}/>`
+
+const svg = (ring, t, withBg) => `<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="58%" r="70%">${(t.bg ?? []).map((c, i) => `<stop offset="${[0, 0.6, 1][i]}" stop-color="${c}"/>`).join('')}</radialGradient>
+    <linearGradient id="ring" x1="1" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${t.ring[0]}"/><stop offset="1" stop-color="${t.ring[1]}"/></linearGradient>
+    <linearGradient id="fire" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${t.fire[0]}"/><stop offset="1" stop-color="${t.fire[1]}"/></linearGradient>
+    <filter id="glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="${ring === ledRing ? 9 : 14}" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  ${withBg ? '<rect width="1024" height="1024" fill="url(#bg)"/>' : ''}${ring(t)}
+  <path d="${flame}" transform="translate(512 512) scale(0.5) translate(-520 -572)" fill="url(#fire)"/>
+</svg>`
+
+const png = (s, file, size = 1024) => sharp(Buffer.from(s)).resize(size, size).png().toFile(file).then(() => console.log(file))
+const ring = style === 'uptime' ? uptimeRing : ledRing
+
+await png(svg(ring, themes.light, true), 'assets/icon.png')             // iOS flattens this; no transparency allowed
+await png(svg(ring, themes.dark, true), 'assets/icon-dark.png')         // iOS 18+ dark icon
+await png(svg(ring, themes.tinted, false), 'assets/icon-tinted.png')    // iOS 18+ tinted icon: white on transparent
+await png(svg(ring, themes.light, false), 'assets/splash-icon.png', 512)
+await png(svg(ring, themes.dark, false), 'assets/splash-icon-dark.png', 512)
+await png(svg(ring, themes.dark, true), 'assets/favicon.png', 48)
+
+fs.mkdirSync('design/icons', { recursive: true })
+for (const [name, r] of [['led-ring', ledRing], ['uptime-ring', uptimeRing]])
+  for (const mode of ['light', 'dark']) await png(svg(r, themes[mode], true), `design/icons/${name}-${mode}.png`)
