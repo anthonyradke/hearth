@@ -4,14 +4,14 @@
     "slug": "hearth",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/icon-dark.png",
     "scheme": "hearth",
     "userInterfaceStyle": "automatic",
     "ios": {
       "bundleIdentifier": "com.anthonyradke.hearth",
       "supportsTablet": false,
       "icon": {
-        "light": "./assets/icon.png",
+        "light": "./assets/icon-dark.png",
         "dark": "./assets/icon-dark.png",
         "tinted": "./assets/icon-tinted.png"
       },
