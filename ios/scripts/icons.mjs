@@ -7,11 +7,14 @@ import fs from 'node:fs'
 
 const style = process.argv[2] === 'uptime' ? 'uptime' : 'led'
 
-// The flame is placed by its centre of mass (520, 572 in its own space), not its bounding box: most of its weight
-// is in the round base, so box-centring made it look like it was sinking in the ring.
+// Vertically the flame sits between its centre of mass (y 572 in its own space) and its bounding box centre: its
+// weight is in the round base, so box-centring made it look like it was sinking in the ring, and mass-centring
+// made it float. `drop` lowers it from the centre of mass. Horizontally its base is centred (x 512); the mass
+// leans right only because of the notch on the left.
 const flame = `M512 190 C560 300 720 400 720 600 C720 730 625 830 512 830 C399 830 304 730 304 600 C304 500 360 440
   400 400 C405 470 430 520 470 540 C450 430 460 300 512 190 Z`
 const R = 330
+const drop = 24
 
 const themes = {
   dark: { bg: ['#3a1608', '#140905', '#070302'], track: '#2a1510', ring: ['#ffd166', '#ff3b30'], fire: ['#ffe08a', '#ff5a1f'], glow: true },
@@ -44,7 +47,7 @@ const svg = (ring, t, withBg) => `<svg xmlns="http://www.w3.org/2000/svg" width=
       <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
   </defs>
   ${withBg ? '<rect width="1024" height="1024" fill="url(#bg)"/>' : ''}${ring(t)}
-  <path d="${flame}" transform="translate(512 512) scale(0.5) translate(-520 -572)" fill="url(#fire)"/>
+  <path d="${flame}" transform="translate(512 ${512 + drop}) scale(0.5) translate(-512 -572)" fill="url(#fire)"/>
 </svg>`
 
 const png = (s, file, size = 1024) => sharp(Buffer.from(s)).resize(size, size).png().toFile(file).then(() => console.log(file))
