@@ -19,7 +19,7 @@ const useHistory = create<{ h: Record<string, Entry[]>; add: (id: string, e: Ent
 
 const QUICK: [string, string][] = [
   ['Who’s on', 'list'], ['Save', 'save-all'], ['Whitelist', 'whitelist list'], ['Day', 'time set day'],
-  ['Clear weather', 'weather clear'], ['Whitelist add…', 'whitelist add '], ['Op…', 'op '],
+  ['Clear weather', 'weather clear'], ['TPS', 'tick query'], ['Whitelist add…', 'whitelist add '], ['Op…', 'op '],
 ]
 
 const EMPTY: Entry[] = []

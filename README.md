@@ -1,6 +1,6 @@
 # Hearth
 
-Hearth is how I keep an eye on my home server from my phone. It's an old ThinkPad that runs a couple of Minecraft servers, a Valheim server, Pi-hole for the house and a few of my own apps. Before this, checking on it meant SSHing in and running `uptime`, `sensors` and `systemctl status` by hand. Now it's one screen.
+Hearth is how I keep an eye on my home server from my phone. It's an old ThinkPad that runs a few Minecraft servers (vanilla, Fabric and NeoForge), a Valheim server when we're playing, Pi-hole for the house and a few of my own apps. Before this, checking on it meant SSHing in and running `uptime`, `sensors` and `systemctl status` by hand. Now it's one screen.
 
 It has two parts:
 

@@ -62,6 +62,19 @@ def test_minecraft_list():
     assert games.parse_list("Unknown command") is None
 
 
+def test_minecraft_meta():
+    assert games.parse_mc_meta(["[00:10:51] [Server thread/INFO]: Starting minecraft server version 26.3"]) == {
+        "version": "26.3"}
+    fabric = games.parse_mc_meta(["Loading Minecraft 26.2 with Fabric Loader 0.19.3",
+                                  "Starting minecraft server version 26.2"])
+    assert fabric == {"version": "26.2", "loader": "Fabric 0.19.3"}
+    neo = games.parse_mc_meta([
+        "\x1b[32m[00:10:26.025] [main/INFO] [Launcher/MODLAUNCHER]: ModLauncher running: args [--launchTarget, "
+        "forgeserver, --fml.neoForgeVersion, 21.1.250, --fml.fmlVersion, 4.0.44, --fml.mcVersion, 1.21.1, nogui]",
+        "[00:10:51] [Server thread/INFO] [minecraft/DedicatedServer]: Starting minecraft server version 1.21.1"])
+    assert neo == {"version": "1.21.1", "loader": "NeoForge 21.1.250"}
+
+
 def test_valheim_tracker():
     v = games.Valheim({"111": "Known"})
     ev = v.feed([

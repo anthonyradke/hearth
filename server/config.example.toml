@@ -74,6 +74,7 @@ group = "Backups"
 actions = "none"
 
 # Game servers. unit must also be listed under [[service]]. address is what the app shows and copies.
+# Minecraft can be vanilla, Fabric or NeoForge: the version and loader are read from the startup log.
 [[game]]
 id = "mc1"
 kind = "minecraft"

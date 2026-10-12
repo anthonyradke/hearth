@@ -7,6 +7,8 @@ from ..rcon import RconError, pool
 LIST_RE = re.compile(r"There are (\d+) of a max of (\d+) players online:?\s*(.*)", re.S)
 MC_VERSION_RE = re.compile(r"Starting minecraft server version (\S+)")
 FABRIC_RE = re.compile(r"Loading Minecraft \S+ with Fabric Loader (\S+)")
+NEOFORGE_RE = re.compile(r"--fml\.neoForgeVersion, ([^,\]\s]+)")
+MC_META_GREP = "Starting minecraft server version|Fabric Loader|fml\\.neoForgeVersion"
 VH_VERSION_RE = re.compile(r"Valheim version: (\S+)")
 VH_WORLD_RE = re.compile(r"Get create world (.+)$")
 VH_HANDSHAKE_RE = re.compile(r"Got handshake from client (\d+)")
@@ -21,6 +23,19 @@ def parse_list(text: str) -> tuple[int, int, list[str]] | None:
         return None
     names = [n.strip() for n in m.group(3).split(",") if n.strip()]
     return int(m.group(1)), int(m.group(2)), names
+
+
+def parse_mc_meta(lines: list[str]) -> dict:
+    """Version and mod loader from a Minecraft server's startup lines."""
+    meta = {}
+    for line in lines:
+        if m := MC_VERSION_RE.search(line):
+            meta["version"] = m.group(1)
+        if m := FABRIC_RE.search(line):
+            meta["loader"] = f"Fabric {m.group(1)}"
+        if m := NEOFORGE_RE.search(line):
+            meta["loader"] = f"NeoForge {m.group(1)}"
+    return meta
 
 
 def invocation_lines(invocation: str, cursor: str | None = None, grep: str | None = None) -> tuple[list[str], str | None]:
@@ -150,29 +165,17 @@ class Games:
         if inv:
             cached = self.mc_meta.get(g.id)
             if not cached or cached[0] != inv or not cached[1].get("version"):
-                lines, _ = invocation_lines(inv, grep="Starting minecraft server version|Fabric Loader")
-                meta = {}
-                for line in lines:
-                    if m := MC_VERSION_RE.search(line):
-                        meta["version"] = m.group(1)
-                    if m := FABRIC_RE.search(line):
-                        meta["loader"] = f"Fabric {m.group(1)}"
-                self.mc_meta[g.id] = (inv, meta)
+                lines, _ = invocation_lines(inv, grep=MC_META_GREP)
+                self.mc_meta[g.id] = (inv, parse_mc_meta(lines))
         elif g.id not in self.mc_meta:
             # Stopped: take the version from the last run in the journal, once.
             try:
                 out = subprocess.run(["journalctl", "-u", g.unit, "-o", "cat", "--no-pager", "-q", "-n", "4",
-                                      "-g", "Starting minecraft server version|Fabric Loader"],
+                                      "-g", MC_META_GREP],
                                      capture_output=True, text=True, timeout=15).stdout.splitlines()
             except (OSError, subprocess.TimeoutExpired):
                 out = []
-            meta = {}
-            for line in out:
-                if m := MC_VERSION_RE.search(line):
-                    meta["version"] = m.group(1)
-                if m := FABRIC_RE.search(line):
-                    meta["loader"] = f"Fabric {m.group(1)}"
-            self.mc_meta[g.id] = ("", meta)
+            self.mc_meta[g.id] = ("", parse_mc_meta(out))
         if g.id in self.mc_meta:
             meta = self.mc_meta[g.id][1]
             snap["version"] = meta.get("version")
