@@ -38,30 +38,40 @@ def parse_mc_meta(lines: list[str]) -> dict:
     return meta
 
 
-def invocation_lines(invocation: str, cursor: str | None = None, grep: str | None = None) -> tuple[list[str], str | None]:
-    """Messages logged by one run of a unit (optionally only after a cursor), and the cursor of the last one."""
-    args = ["journalctl", f"_SYSTEMD_INVOCATION_ID={invocation}", "-o", "json", "--no-pager", "-q",
-            "--output-fields=MESSAGE"]
+def journal_entries(match: list[str], cursor: str | None = None, grep: str | None = None,
+                    last: int | None = None) -> list[dict]:
+    """Raw journal entries for some journalctl matches (optionally only after a cursor, matching a pattern, or the
+    last n), oldest first, with MESSAGE decoded to text."""
+    args = ["journalctl", *match, "-o", "json", "--no-pager", "-q",
+            "--output-fields=MESSAGE,_SYSTEMD_INVOCATION_ID"]
     if cursor:
         args.append(f"--after-cursor={cursor}")
     if grep:
         args += ["-g", grep]
+    if last:
+        args += ["-n", str(last)]
     try:
         out = subprocess.run(args, capture_output=True, text=True, timeout=15)
     except (OSError, subprocess.TimeoutExpired):
-        return [], cursor
-    lines, last = [], cursor
+        return []
+    entries = []
     for raw in out.stdout.splitlines():
         try:
             e = json.loads(raw)
         except ValueError:
             continue
         msg = e.get("MESSAGE")
-        if isinstance(msg, list):
+        if isinstance(msg, list):  # binary messages come back as byte arrays
             msg = bytes(msg).decode("utf8", "replace")
-        lines.append(msg or "")
-        last = e.get("__CURSOR", last)
-    return lines, last
+        e["MESSAGE"] = msg or ""
+        entries.append(e)
+    return entries
+
+
+def invocation_lines(invocation: str, cursor: str | None = None, grep: str | None = None) -> tuple[list[str], str | None]:
+    """Messages logged by one run of a unit (optionally only after a cursor), and the cursor of the last one."""
+    entries = journal_entries([f"_SYSTEMD_INVOCATION_ID={invocation}"], cursor, grep)
+    return [e["MESSAGE"] for e in entries], (entries[-1].get("__CURSOR", cursor) if entries else cursor)
 
 
 class Valheim:
@@ -132,7 +142,7 @@ class Games:
         self.games = games
         self.db = db
         self.mc_players: dict[str, list[str]] = {}
-        self.mc_meta: dict[str, tuple[str, dict]] = {}  # game id → (invocation, {version, loader})
+        self.mc_meta: dict[str, tuple[str, dict, str | None]] = {}  # game id → (invocation, {version, loader}, cursor)
         self.valheim: dict[str, Valheim] = {
             g.id: Valheim(db.get(f"valheim_names:{g.id}", {})) for g in games if g.kind == "valheim"}
 
@@ -162,24 +172,31 @@ class Games:
 
     def _minecraft(self, g, u: dict, snap: dict) -> list[tuple[str, str]]:
         inv = u.get("invocation")
-        if inv:
-            cached = self.mc_meta.get(g.id)
-            if not cached or cached[0] != inv or not cached[1].get("version"):
-                lines, _ = invocation_lines(inv, grep=MC_META_GREP)
-                self.mc_meta[g.id] = (inv, parse_mc_meta(lines))
-        elif g.id not in self.mc_meta:
-            # Stopped: take the version from the last run in the journal, once.
-            try:
-                out = subprocess.run(["journalctl", "-u", g.unit, "-o", "cat", "--no-pager", "-q", "-n", "4",
-                                      "-g", MC_META_GREP],
-                                     capture_output=True, text=True, timeout=15).stdout.splitlines()
-            except (OSError, subprocess.TimeoutExpired):
-                out = []
-            self.mc_meta[g.id] = ("", parse_mc_meta(out))
-        if g.id in self.mc_meta:
-            meta = self.mc_meta[g.id][1]
-            snap["version"] = meta.get("version")
-            snap["loader"] = meta.get("loader")
+        cached = self.mc_meta.get(g.id)
+        if inv and (not cached or cached[0] != inv):
+            # New run (or Hearth just started): one grep over the run so far.
+            lines, _ = invocation_lines(inv, grep=MC_META_GREP)
+            self.mc_meta[g.id] = (inv, parse_mc_meta(lines), None)
+        elif inv and not cached[1].get("version"):
+            # Still starting up: read only what's new since the last poll, so a long modded startup isn't
+            # re-scanned on every tick.
+            lines, cursor = invocation_lines(inv, cached[2])
+            self.mc_meta[g.id] = (inv, {**cached[1], **parse_mc_meta(lines)}, cursor)
+        elif not inv and g.id not in self.mc_meta:
+            # Stopped: take the version from the last run that logged one, once. Only that run, so a loader from
+            # an older run can't stick.
+            meta = {}
+            last = journal_entries(["-u", g.unit], grep=MC_META_GREP, last=1)
+            if last and (prev_inv := last[-1].get("_SYSTEMD_INVOCATION_ID")):
+                meta = parse_mc_meta(invocation_lines(prev_inv, grep=MC_META_GREP)[0])
+            self.mc_meta[g.id] = ("", meta, None)
+        meta = self.mc_meta.get(g.id, ("", {}, None))[1]
+        if meta.get("version"):
+            snap["version"], snap["loader"] = meta["version"], meta.get("loader")
+            self.db.put(f"loader:{g.id}", snap["loader"])
+        else:
+            # The version falls back to the db in collect(); keep the loader that went with it.
+            snap["loader"] = self.db.get(f"loader:{g.id}")
         prev = self.mc_players.get(g.id, [])
         if not snap["running"]:
             pool.drop(g.rcon_port)

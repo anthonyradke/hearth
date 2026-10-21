@@ -26,7 +26,7 @@ export function issueFor(issues: Issue[] | undefined, ...ids: string[]): Issue |
   return issues?.find((i) => ids.some((id) => i.id === id || i.id.startsWith(`${id}:`)))
 }
 
-/** "Minecraft 26.3", "Minecraft 26.2 · Fabric 0.19.3", "Valheim 1.0.12" (Valheim prefixes its build type: "l-"). */
+/** "Minecraft 26.3", "Minecraft 26.2 · Fabric 0.19.3", "Minecraft 1.21.1 · NeoForge 21.1.250", "Valheim 1.0.12" (Valheim prefixes its build type: "l-"). */
 export function gameLabel(g: { kind: string; version: string | null; loader?: string | null }): string {
   const name = g.kind === 'minecraft' ? 'Minecraft' : 'Valheim'
   const v = g.version?.replace(/^[a-z]-/, '')

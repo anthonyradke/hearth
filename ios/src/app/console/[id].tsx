@@ -21,6 +21,9 @@ const QUICK: [string, string][] = [
   ['Who’s on', 'list'], ['Save', 'save-all'], ['Whitelist', 'whitelist list'], ['Day', 'time set day'],
   ['Clear weather', 'weather clear'], ['TPS', 'tick query'], ['Whitelist add…', 'whitelist add '], ['Op…', 'op '],
 ]
+// NeoForge's own TPS command breaks the tick time down per dimension.
+const quickFor = (loader?: string | null) =>
+  loader?.startsWith('NeoForge') ? QUICK.map(([l, c]): [string, string] => [l, c === 'tick query' ? 'neoforge tps' : c]) : QUICK
 
 const EMPTY: Entry[] = []
 const clean = (s: string) => s.replace(/§./g, '')
@@ -85,7 +88,7 @@ export default function Console() {
       </ScrollView>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled"
         style={{ flexGrow: 0 }} contentContainerStyle={{ paddingHorizontal: space.l, gap: space.s, paddingBottom: space.s }}>
-        {QUICK.map(([label, cmd]) => (
+        {quickFor(game?.loader).map(([label, cmd]) => (
           <Tap key={cmd} onPress={() => quick(cmd)} disabled={busy}
             style={{ height: 34, paddingHorizontal: space.m + 2, borderRadius: radius.pill, backgroundColor: c.fill, justifyContent: 'center' }}>
             <Txt variant="sub">{label}</Txt>

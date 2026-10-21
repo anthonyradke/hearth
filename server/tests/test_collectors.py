@@ -75,6 +75,47 @@ def test_minecraft_meta():
     assert neo == {"version": "1.21.1", "loader": "NeoForge 21.1.250"}
 
 
+def test_minecraft_stopped_meta(monkeypatch, db):
+    from hearth.config import Game
+    g = Game(id="mc", kind="minecraft", name="MC", unit="minecraft")
+    runs = {"old": ["Loading Minecraft 26.2 with Fabric Loader 0.19.3", "Starting minecraft server version 26.2"],
+            "new": ["Starting minecraft server version 26.3"]}
+    monkeypatch.setattr(games, "journal_entries", lambda match, cursor=None, grep=None, last=None: [
+        {"MESSAGE": runs["new"][0], "_SYSTEMD_INVOCATION_ID": "new"}])
+    monkeypatch.setattr(games, "invocation_lines", lambda inv, cursor=None, grep=None: (runs[inv], None))
+    snap, _, _ = games.Games([g], db).collect({})
+    # Only the last run counts: the old run's Fabric loader doesn't stick to the vanilla server.
+    assert (snap[0]["version"], snap[0]["loader"]) == ("26.3", None)
+
+
+def test_minecraft_loader_fallback(monkeypatch, db):
+    from hearth.config import Game
+    g = Game(id="mc", kind="minecraft", name="MC", unit="minecraft")
+    db.put("version:mc", "1.21.1")
+    db.put("loader:mc", "NeoForge 21.1.250")
+    monkeypatch.setattr(games, "journal_entries", lambda *a, **k: [])
+    snap, _, _ = games.Games([g], db).collect({})
+    assert (snap[0]["version"], snap[0]["loader"]) == ("1.21.1", "NeoForge 21.1.250")
+
+
+def test_minecraft_startup_is_incremental(monkeypatch, db):
+    from hearth.config import Game
+    g = Game(id="mc", kind="minecraft", name="MC", unit="minecraft")
+    calls = []
+
+    def fake(inv, cursor=None, grep=None):
+        calls.append((cursor, grep))
+        if grep:
+            return ["--fml.neoForgeVersion, 21.1.250, --fml.fmlVersion"], None
+        return (["Starting minecraft server version 1.21.1"], "c2") if cursor == "c1" else ([], "c1")
+    monkeypatch.setattr(games, "invocation_lines", fake)
+    gm = games.Games([g], db)
+    for _ in range(4):
+        snap, _, _ = gm.collect({"minecraft": {"active": "active", "invocation": "i1"}})
+    assert calls == [(None, games.MC_META_GREP), (None, None), ("c1", None)]
+    assert (snap[0]["version"], snap[0]["loader"]) == ("1.21.1", "NeoForge 21.1.250")
+
+
 def test_valheim_tracker():
     v = games.Valheim({"111": "Known"})
     ev = v.feed([
