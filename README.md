@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/icon.png" width="112" height="112" alt="Hearth icon">
+</p>
+
 <h1 align="center">Hearth</h1>
 
 <p align="center">Status, history, alerts and service controls for a home server, with a native iOS app.</p>
@@ -8,9 +12,9 @@
   <img src="https://img.shields.io/badge/FastAPI-SQLite-009688?logo=fastapi&logoColor=white" alt="FastAPI and SQLite">
 </p>
 
-Hearth monitors a single Linux server: an old ThinkPad that runs Minecraft (vanilla, Fabric and NeoForge) and
-Valheim servers, Pi-hole and several self-hosted apps. It replaces SSHing in to run `uptime`, `sensors` and
-`systemctl status` with one screen on the phone, and it pages when something needs attention.
+Hearth monitors a single Linux server and the services on it from an iPhone. It replaces SSHing in to run
+`uptime`, `sensors` and `systemctl status` with one screen, and it sends an alert when something needs attention.
+It was written for a laptop that hosts Minecraft and Valheim servers, Pi-hole and several self-hosted apps.
 
 <p align="center">
   <img src="docs/screens.png" width="900" alt="Overview, Services, Games and Activity screens (demo data)">
@@ -35,7 +39,27 @@ There are two parts:
 - Every chart can be scrubbed with a finger, across ranges from 1 hour to 90 days.
 - Alerts go out through [ntfy](https://ntfy.sh), with grace periods, repeats and quiet hours.
 
-## Architecture
+## Requirements
+
+- A Linux server with systemd, Python 3.13, [uv](https://docs.astral.sh/uv/) and `lm-sensors`.
+- Tailscale on the server and the phone. The API is published with Tailscale Serve.
+- An iPhone with Expo Go, or a Mac with Xcode for a standalone build.
+- Optional: an [ntfy](https://ntfy.sh) topic for alerts and a [healthchecks.io](https://healthchecks.io) check.
+
+## Install
+
+```bash
+sudo ./install.sh            # first run creates /etc/hearth/config.toml from the example and stops
+sudo nano /etc/hearth/config.toml
+sudo ./install.sh            # installs to /opt/hearth, starts hearth.service, runs a self-test
+sudo cat /etc/hearth/token   # entered in the app once
+```
+
+Everything machine-specific (units, game servers, RCON passwords, the Pi-hole app password, thresholds) lives in
+`/etc/hearth/config.toml`; `server/config.example.toml` documents each setting. `install.sh` is safe to re-run after any
+change, and `sudo ./install.sh new-token` replaces the token.
+
+## How it works
 
 ```mermaid
 flowchart LR
@@ -60,7 +84,7 @@ flowchart LR
 | `ios/src/app` | Screens, one file per route (Expo Router) |
 | `ios/src/lib` | API client, formatting, status logic and actions |
 
-## Security
+### Security
 
 The API is reachable only on the tailnet, through Tailscale Serve, and is never exposed to the internet. Every request
 needs a bearer token generated at install time, and the `Tailscale-User-Login` header that Serve adds has to match the
@@ -71,7 +95,7 @@ nothing in home directories except the Valheim list files. The only units it can
 marks, through a generated polkit rule. It isn't in the `docker` group; container CPU and memory are read from cgroups.
 Every action, including refused ones, is written to an audit log.
 
-## Alerts
+### Alerts
 
 Rules cover a unit that should be running and isn't, disk, memory, CPU temperature, running on battery, Tailscale key
 expiry, a failed or stale backup and Pi-hole not answering. A condition has to hold for a grace period before it's
@@ -83,20 +107,17 @@ anyone with the ntfy topic can read it.
 A server can't report its own failure, so Hearth also pings a [healthchecks.io](https://healthchecks.io) check every
 minute and healthchecks.io alerts when the pings stop.
 
-## Install
+## API
 
-```bash
-sudo ./install.sh            # first run creates /etc/hearth/config.toml from the example and stops
-sudo nano /etc/hearth/config.toml
-sudo ./install.sh            # installs to /opt/hearth, starts hearth.service, runs a self-test
-sudo cat /etc/hearth/token   # entered in the app once
-```
+JSON under `/api`. `/api/ping` is the only route that doesn't need auth.
 
-Everything machine-specific (units, game servers, RCON passwords, the Pi-hole app password, thresholds) lives in
-`/etc/hearth/config.toml`; `server/config.example.toml` documents each setting. `install.sh` is safe to re-run after any
-change, and `sudo ./install.sh new-token` replaces the token.
+- Reading: `overview`, `system`, `issues`, `services`, `services/{unit}` (with recent journal lines), `games`,
+  `games/{id}`, `network`, `backups`, `history?key=cpu&range=24h` (1h, 6h, 24h, 7d, 30d, 90d), `events`, `alerts`,
+  `audit`.
+- Changing things: `POST services/{unit}/{start|stop|restart}` (only what the config allows for that unit),
+  `POST games/{id}/rcon`, `GET/POST/DELETE games/{id}/lists/...` for Valheim's lists, and `POST alerts/test`.
 
-## Development
+## Build from source
 
 ```bash
 cd server
@@ -113,25 +134,8 @@ echo 'EXPO_PUBLIC_HEARTH_URL=https://<server>.<tailnet>.ts.net:8446' > .env.loca
 npx expo start --port 8083
 ```
 
-With Expo Go and Tailscale on the phone, open `exp://<server's Tailscale IP>:8083`. For a standalone build with a free
-Apple ID, run `npx expo run:ios --device --configuration Release` on a Mac with the phone connected, after picking a
-Personal Team under Signing & Capabilities in `ios/ios/Hearth.xcworkspace`. Re-running the same command reinstalls
-over the old copy and keeps the token and cached data.
-
-For layout work without a phone, `npx expo start --web --port 8083` plus
-`HEARTH_TOKEN=... HEARTH_LOGIN=<owner> node scripts/preview.mjs` serves the web build and the API from one origin on
-`http://127.0.0.1:8091`, adding the credentials the phone would send. It only listens on localhost.
+[docs/development.md](docs/development.md) covers running the app on a phone and previewing layouts in a browser.
 `ios/DESIGN.md` covers the design decisions.
-
-## API
-
-JSON under `/api`. `/api/ping` is the only route that doesn't need auth.
-
-- Reading: `overview`, `system`, `issues`, `services`, `services/{unit}` (with recent journal lines), `games`,
-  `games/{id}`, `network`, `backups`, `history?key=cpu&range=24h` (1h, 6h, 24h, 7d, 30d, 90d), `events`, `alerts`,
-  `audit`.
-- Changing things: `POST services/{unit}/{start|stop|restart}` (only what the config allows for that unit),
-  `POST games/{id}/rcon`, `GET/POST/DELETE games/{id}/lists/...` for Valheim's lists, and `POST alerts/test`.
 
 ## Known limitations
 
