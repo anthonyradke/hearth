@@ -77,9 +77,19 @@ def evaluate(state, cfg, db, now: float | None = None) -> list[dict]:
             out.append(issue("backup", CRIT, "Last backup failed", last.get("error") or "", "backups"))
         elif b.get("age_hours") is not None and b["age_hours"] > r.backup_max_age_hours:
             out.append(issue("backup", WARN, f"No backup for {b['age_hours']:.0f} hours", "", "backups"))
-        for job in ("check", "drill"):
-            if (b.get(job) or {}).get("result") == "failed":
-                out.append(issue(f"backup_{job}", WARN, f"Backup {job} failed", b[job].get("error") or "", "backups"))
+        elif last.get("result") == "partial":
+            out.append(issue("backup", WARN, "Last backup was partial", last.get("error") or "", "backups"))
+        if (b.get("frequent") or {}).get("result") == "failed":
+            out.append(issue("backup_frequent", WARN, "Half-hourly backup failed", b["frequent"].get("error") or "",
+                             "backups"))
+        for job, max_days in (("check", r.check_max_age_days), ("drill", r.drill_max_age_days)):
+            j = b.get(job) or {}
+            last_run = j.get("finished") or j.get("started")
+            if j.get("result") == "failed":
+                out.append(issue(f"backup_{job}", WARN, f"Backup {job} failed", j.get("error") or "", "backups"))
+            elif last_run and now - last_run > max_days * 86400:
+                out.append(issue(f"backup_{job}", WARN, f"No backup {job} for {(now - last_run) / 86400:.0f} days",
+                                 "", "backups"))
     elif b:
         out.append(issue("backup", WARN, "Backup status unreadable", b.get("error", ""), "backups"))
 

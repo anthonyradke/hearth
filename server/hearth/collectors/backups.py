@@ -4,7 +4,7 @@ import json, subprocess, time
 from datetime import datetime
 from .services import parse_show, _ts
 
-TIMERS = ["cellar-backup.timer", "cellar-check.timer", "cellar-drill.timer"]
+TIMERS = ["cellar-backup.timer", "cellar-frequent.timer", "cellar-check.timer", "cellar-drill.timer"]
 
 
 def _t(v: str | None) -> int | None:
@@ -22,7 +22,7 @@ def parse_status(d: dict) -> dict:
         if not j:
             return None
         j = dict(j)
-        for k in ("started", "finished", "measured"):
+        for k in ("started", "finished", "measured", "last_success"):
             if k in j:
                 j[k] = _t(j[k])
         return j
@@ -31,7 +31,8 @@ def parse_status(d: dict) -> dict:
         "schema": d.get("schema"),
         "updated": _t(d.get("updated")),
         "last_success": _t(d.get("last_success")),
-        "backup": job(d.get("backup")),
+        "backup": job(d.get("backup")),          # nightly and manual runs
+        "frequent": job(d.get("frequent")),      # half-hourly runs
         "check": job(d.get("check")),
         "drill": job(d.get("drill")),
         "repo": job(d.get("repo")),

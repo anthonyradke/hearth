@@ -65,7 +65,7 @@ function Body({ b }: { b: B }) {
         {b.repo && <Row label="Stored" value={bytes(b.repo.size_bytes)} sub="After compression and deduplication" />}
       </Group>
 
-      <Group header="Checks" footer="The weekly check reads back 10% of the stored data. The monthly drill restores a few files and verifies them.">
+      <Group header="Checks" footer="The weekly check reads back a different 1/52 of the stored data, so all of it once a year. The monthly drill restores a few files and verifies them.">
         <Row label="Integrity check" leading={<Dot color={b.check?.result === 'failed' ? c.neg : b.check ? c.pos : c.label3} />}
           value={b.check ? RESULT[b.check.result] ?? b.check.result : 'Not run yet'}
           sub={[b.check?.finished && `Last ${when(b.check.finished)}`, b.timers?.check?.next && `next ${when(b.timers.check.next)}`].filter(Boolean).join(' · ') || undefined} />

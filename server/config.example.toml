@@ -118,6 +118,8 @@ flap_restarts = 3
 flap_minutes = 15
 tailscale_expiry_days = 14
 backup_max_age_hours = 36
+check_max_age_days = 8
+drill_max_age_days = 33
 
 # Notifications through ntfy (the free ntfy iOS app, subscribed to the same topic). Use a long random topic: anyone
 # who knows it can read the messages, which is why they stay vague ("valheim is down", never IPs or names).

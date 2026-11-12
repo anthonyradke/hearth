@@ -37,6 +37,26 @@ def test_problems(cfg, db):
     assert power["title"] == "On battery, 20% left"
 
 
+def test_backup_jobs(cfg, db):
+    now = time.time()
+    day = 86400
+    st = State(backups={"available": True, "age_hours": 3,
+                        "backup": {"result": "partial", "error": "mc: save-on failed"},
+                        "frequent": {"result": "failed", "error": "repository locked"},
+                        "check": {"result": "ok", "finished": now - 9 * day},
+                        "drill": {"result": "running", "started": now - 40 * day}})
+    out = {i["id"]: i for i in rules.evaluate(st, cfg, db, now)}
+    assert set(out) == {"backup", "backup_frequent", "backup_check", "backup_drill"}
+    assert out["backup"]["title"] == "Last backup was partial"
+    assert out["backup_check"]["title"] == "No backup check for 9 days"
+    assert out["backup_drill"]["title"] == "No backup drill for 40 days"
+
+    st.backups.update(backup={"result": "ok"}, frequent={"result": "ok"},
+                      check={"result": "ok", "finished": now - 2 * day},
+                      drill={"result": "ok", "finished": now - 20 * day})
+    assert rules.evaluate(st, cfg, db, now) == []
+
+
 def test_ram_sustained(cfg, db):
     now = int(time.time())
     for i in range(10):

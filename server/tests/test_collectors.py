@@ -155,7 +155,9 @@ def test_cellar_status():
     s = backups.parse_status({"schema": 1, "updated": "2026-09-23T19:28:23+00:00",
                               "last_success": "2026-09-23T19:27:57+00:00",
                               "backup": {"started": "2026-09-23T19:26:10+00:00", "finished": None, "result": "running"},
+                              "frequent": {"result": "ok", "last_success": "2026-09-23T19:27:57+00:00"},
                               "sources": [{"path": "/a", "bytes": 1}, {"path": "/b", "bytes": 5}]})
+    assert s["frequent"]["last_success"] == 1790191677
     assert s["last_success"] == 1790191677
     assert s["backup"]["finished"] is None and s["backup"]["result"] == "running"
     assert [x["path"] for x in s["sources"]] == ["/b", "/a"]

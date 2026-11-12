@@ -39,6 +39,8 @@ class Rules:
     flap_minutes: float = 15
     tailscale_expiry_days: float = 14
     backup_max_age_hours: float = 36
+    check_max_age_days: float = 8      # weekly
+    drill_max_age_days: float = 33     # monthly
 
 
 @dataclass
