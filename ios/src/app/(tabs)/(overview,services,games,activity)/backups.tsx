@@ -65,6 +65,8 @@ function Body({ b }: { b: B }) {
         {b.repo && <Row label="Stored" value={bytes(b.repo.size_bytes)} sub="After compression and deduplication" />}
       </Group>
 
+      {b.local && <LocalCopy l={b.local} />}
+
       <Group header="Checks" footer="The weekly check reads back a different 1/52 of the stored data, so all of it once a year. The monthly drill restores a few files and verifies them.">
         <Row label="Integrity check" leading={<Dot color={b.check?.result === 'failed' ? c.neg : b.check ? c.pos : c.label3} />}
           value={b.check ? RESULT[b.check.result] ?? b.check.result : 'Not run yet'}
@@ -82,5 +84,23 @@ function Body({ b }: { b: B }) {
         </Group>
       )}
     </View>
+  )
+}
+
+/** The second copy cellar keeps on the other machine's disk: same jobs, restores in minutes instead of days. */
+function LocalCopy({ l }: { l: NonNullable<B['local']> }) {
+  const { c } = useTheme()
+  const dot = (j?: Job | null) => <Dot color={j?.result === 'failed' ? c.neg : j?.result === 'partial' ? c.warn : j ? c.pos : c.label3} />
+  const line = (j?: Job | null) => (j ? RESULT[j.result] ?? j.result : 'Not run yet')
+  return (
+    <Group header="Local copy" footer="A second copy on another machine’s disk, written with every backup. The offsite copy is the one that survives the house; this one restores in minutes. The server can add to it but can’t delete it.">
+      <Row label="Last copy" leading={dot(l.backup)} value={l.backup?.result === 'failed' ? 'Failed' : l.last_success ? ago(l.last_success) : 'Never'}
+        sub={l.backup?.result === 'failed' ? l.backup.error ?? undefined : undefined} />
+      <Row label="Half-hourly" leading={dot(l.frequent)} value={line(l.frequent)}
+        sub={l.frequent?.result === 'failed' ? l.frequent.error ?? undefined : l.frequent?.finished ? `Last ${when(l.frequent.finished)}` : undefined} />
+      <Row label="Integrity check" leading={dot(l.check)} value={line(l.check)} sub={l.check?.finished ? `Last ${when(l.check.finished)}` : undefined} />
+      <Row label="Restore drill" leading={dot(l.drill)} value={line(l.drill)} sub={l.drill?.finished ? `Last ${when(l.drill.finished)}` : undefined} />
+      {l.repo && <Row label="Stored" value={bytes(l.repo.size_bytes)} sub={`${l.repo.snapshots} snapshots`} />}
+    </Group>
   )
 }

@@ -162,3 +162,49 @@ def test_cellar_status():
     assert s["backup"]["finished"] is None and s["backup"]["result"] == "running"
     assert [x["path"] for x in s["sources"]] == ["/b", "/a"]
     assert s["drill"] is None
+
+
+# Trimmed `smartctl --json -a` output from a Seagate SATA HDD and a Samsung NVMe SSD.
+SMART_ATA = {"device": {"name": "/dev/sda", "type": "sat", "protocol": "ATA"}, "model_name": "ST1000DM010-2EP102",
+             "smart_status": {"passed": True}, "temperature": {"current": 33}, "power_on_time": {"hours": 25732},
+             "user_capacity": {"bytes": 1000204886016},
+             "ata_smart_attributes": {"table": [{"id": 5, "raw": {"value": 0}}, {"id": 9, "raw": {"value": 25732}},
+                                                {"id": 197, "raw": {"value": 2}}, {"id": 198, "raw": {"value": 0}}]}}
+SMART_NVME = {"device": {"name": "/dev/nvme0n1", "type": "nvme", "protocol": "NVMe"},
+              "model_name": "Samsung SSD 970 EVO 500GB", "smart_status": {"passed": True, "nvme": {"value": 0}},
+              "temperature": {"current": 40}, "power_on_time": {"hours": 13896}, "nvme_total_capacity": 500107862016,
+              "nvme_smart_health_information_log": {"critical_warning": 0, "available_spare": 100,
+                                                    "percentage_used": 14, "media_errors": 0, "unsafe_shutdowns": 162}}
+
+
+def test_smart(tmp_path):
+    from hearth.collectors import smart
+    import json
+    (tmp_path / "sda.json").write_text(json.dumps(SMART_ATA))
+    (tmp_path / "nvme0n1.json").write_text(json.dumps(SMART_NVME))
+    hdd, ssd, missing = smart.collect(str(tmp_path), ["/dev/sda", "/dev/nvme0n1", "/dev/sdb"])
+    assert hdd["kind"] == "ata" and hdd["passed"] and hdd["temp"] == 33 and hdd["pending"] == 2
+    assert hdd["reallocated"] == 0 and hdd["power_on_hours"] == 25732 and hdd["checked"] > 0
+    assert ssd["kind"] == "nvme" and ssd["percent_used"] == 14 and ssd["size"] == 500107862016
+    assert missing == {"device": "/dev/sdb", "error": "no SMART data yet"}
+
+
+def test_gpus():
+    text = "NVIDIA GeForce RTX 2060 SUPER, 41, 7, 1, 8192, 11.85, 175.00, 38\nbroken line\n"
+    (g,) = system.parse_gpus(text)
+    assert g["name"] == "NVIDIA GeForce RTX 2060 SUPER" and g["temp"] == 41 and g["util"] == 7
+    assert g["mem_total"] == 8192 * 1024 * 1024 and g["watts"] == 11.85 and g["fan"] == 38
+    (g,) = system.parse_gpus("GPU, 41, 7, 1, 8192, [N/A], [N/A], [N/A]")
+    assert g["watts"] is None and g["fan"] is None
+
+
+def test_cellar_local_copy():
+    d = backups.parse_status({"schema": 1, "last_success": "2026-11-18T04:20:26+00:00",
+                              "local": {"last_success": "2026-11-18T04:20:29+00:00",
+                                        "backup": {"result": "ok", "finished": "2026-11-18T04:20:54+00:00"},
+                                        "frequent": {"result": "failed", "error": "refused"},
+                                        "repo": {"snapshots": 3, "size_bytes": 10, "measured": None}}})
+    loc = d["local"]
+    assert loc["backup"]["result"] == "ok" and loc["backup"]["finished"] == 1794975654
+    assert loc["frequent"]["result"] == "failed" and loc["age_hours"] > 0 and loc["check"] is None
+    assert backups.parse_status({"schema": 1})["local"] is None

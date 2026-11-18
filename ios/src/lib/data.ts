@@ -17,7 +17,9 @@ if (process.env.EXPO_OS !== 'web') {
 const LIVE = 15_000
 
 export const useOverview = () => useQuery({ queryKey: ['overview'], queryFn: api.overview, refetchInterval: LIVE })
-export const useSystem = () => useQuery({ queryKey: ['system'], queryFn: api.system, refetchInterval: LIVE })
+/** host: another machine's id; leave out for the server's own. */
+export const useSystem = (host?: string) =>
+  useQuery({ queryKey: ['system', host ?? ''], queryFn: () => api.system(host), refetchInterval: LIVE })
 export const useServices = () => useQuery({ queryKey: ['services'], queryFn: api.services, refetchInterval: LIVE })
 export const useService = (unit: string) =>
   useQuery({ queryKey: ['service', unit], queryFn: () => api.service(unit), refetchInterval: LIVE })

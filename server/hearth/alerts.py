@@ -61,6 +61,15 @@ class Alerts:
     def test(self) -> bool:
         return self._send(self.cfg.alerts.title, "Test notification. Alerts are working.", "default", "white_check_mark")
 
+    def remote_host(self, host: str | None) -> str:
+        """The id stored with an alert: a remote host's id, or '' for this machine."""
+        return host if host and self.cfg.host(host) else ""
+
+    def title_for(self, row: dict) -> str:
+        """Push title: the remote host's name for its alerts, the configured title for this machine's."""
+        h = self.cfg.host(row.get("host") or "")
+        return h.name if h else self.cfg.alerts.title
+
     # ---------- the engine ----------
     def __call__(self, issues: list[dict], now: float | None = None) -> None:
         with self.lock:
@@ -75,10 +84,11 @@ class Alerts:
         # New issues open an alert row at once (the app shows it); notifying waits for the grace period.
         for rid, i in current.items():
             if rid not in open_rows:
-                aid = self.db.x("INSERT INTO alerts(rule, severity, title, detail, started) VALUES(?,?,?,?,?)",
-                                (rid, i["severity"], i["title"], i["detail"], int(now)))
+                host = self.remote_host(i.get("host"))
+                aid = self.db.x("INSERT INTO alerts(rule, severity, title, detail, started, host) VALUES(?,?,?,?,?,?)",
+                                (rid, i["severity"], i["title"], i["detail"], int(now), host))
                 open_rows[rid] = {"id": aid, "rule": rid, "severity": i["severity"], "title": i["title"],
-                                  "started": int(now), "notified": 0}
+                                  "started": int(now), "notified": 0, "host": host}
             else:  # keep the latest wording ("Disk 86% full" → "Disk 91% full") and escalate severity
                 row = open_rows[rid]
                 if row["title"] != i["title"] or row["severity"] != i["severity"]:
@@ -94,7 +104,8 @@ class Alerts:
                 self.db.x("UPDATE alerts SET ended=? WHERE id=?", (int(now), row["id"]))
                 if row["notified"]:
                     took = _span(now - row["started"])
-                    self._send(a.title, f"Resolved: {row['title']} (after {took})", "low", "white_check_mark")
+                    self._send(self.title_for(row), f"Resolved: {row['title']} (after {took})", "low",
+                               "white_check_mark")
                 continue
             crit = row["severity"] == "critical"
             grace = a.grace_critical if crit else a.grace_warning
@@ -103,10 +114,11 @@ class Alerts:
             if not row["notified"]:
                 if quiet and not crit:
                     continue  # wait for morning
-                if self._send(a.title, row["title"], "high" if crit else "default", "rotating_light" if crit else "warning"):
+                if self._send(self.title_for(row), row["title"], "high" if crit else "default",
+                              "rotating_light" if crit else "warning"):
                     self.db.x("UPDATE alerts SET notified=? WHERE id=?", (int(now), row["id"]))
             elif crit and a.remind_hours and now - row["notified"] >= a.remind_hours * 3600:
-                if self._send(a.title, f"Still: {row['title']}", "high", "rotating_light"):
+                if self._send(self.title_for(row), f"Still: {row['title']}", "high", "rotating_light"):
                     self.db.x("UPDATE alerts SET notified=? WHERE id=?", (int(now), row["id"]))
 
     def event(self, kind: str, detail: str = "") -> None:

@@ -32,3 +32,13 @@ export function gameLabel(g: { kind: string; version: string | null; loader?: st
   const v = g.version?.replace(/^[a-z]-/, '')
   return `${name}${v ? ` ${v}` : ''}${g.loader ? ` · ${g.loader}` : ''}`
 }
+
+/** A remote host's id from an issue or history key ("h5:ram", "h5/cpu"), or undefined for the server's own. */
+export const remoteOf = (issue: Issue, local: string | undefined) =>
+  issue.host && issue.host !== local ? issue.host : undefined
+
+/** The detail screen for a machine metric, on the server or on another host. */
+export const metricHref = (key: string, host?: string) => (host ? `/metric/${key}?host=${encodeURIComponent(host)}` : `/metric/${key}`)
+
+/** A history key for a machine metric: "cpu" on the server, "h5/cpu" on host h5. */
+export const hostKey = (key: string, host?: string) => (host ? `${host}/${key}` : key)

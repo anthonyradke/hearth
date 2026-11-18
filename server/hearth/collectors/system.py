@@ -1,6 +1,11 @@
-"""CPU, memory, disks, temperatures, network, battery and uptime, from /proc, /sys and `sensors -j`."""
+"""CPU, memory, disks, temperatures, network, battery and uptime, from /proc, /sys and `sensors -j`; NVIDIA GPUs from
+`nvidia-smi`; disk health from the files hearth-smart.timer writes (smart.py)."""
 from __future__ import annotations
-import json, os, platform, socket, subprocess, time
+import json, os, platform, shutil, socket, subprocess, time
+from . import smart as smart_mod
+
+GPU_FIELDS = ["name", "temperature.gpu", "utilization.gpu", "memory.used", "memory.total", "power.draw",
+              "power.limit", "fan.speed"]
 
 
 def read(path: str, default: str = "") -> str:
@@ -142,11 +147,48 @@ def vnstat(iface: str) -> dict | None:
         return None
 
 
+def _num(v: str) -> float | None:
+    try:
+        return float(v)
+    except ValueError:
+        return None  # "[N/A]", "[Not Supported]"
+
+
+def parse_gpus(text: str) -> list[dict]:
+    """`nvidia-smi --query-gpu=<GPU_FIELDS> --format=csv,noheader,nounits` → one dict per GPU. Memory in bytes."""
+    out = []
+    for line in text.strip().splitlines():
+        f = [x.strip() for x in line.split(",")]
+        if len(f) != len(GPU_FIELDS):
+            continue
+        name, temp, util, used, total, watts, limit, fan = f
+        mib = 1024 * 1024
+        out.append({"name": name, "temp": _num(temp), "util": _num(util),
+                    "mem_used": int(_num(used) * mib) if _num(used) is not None else None,
+                    "mem_total": int(_num(total) * mib) if _num(total) is not None else None,
+                    "watts": _num(watts), "watts_limit": _num(limit), "fan": _num(fan)})
+    return out
+
+
+def gpus() -> list[dict] | None:
+    """None when there's no NVIDIA driver; [] when nvidia-smi is there but didn't answer."""
+    exe = shutil.which("nvidia-smi")
+    if not exe:
+        return None
+    try:
+        out = subprocess.run([exe, f"--query-gpu={','.join(GPU_FIELDS)}", "--format=csv,noheader,nounits"],
+                             capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    return parse_gpus(out.stdout) if out.returncode == 0 else []
+
+
 class System:
     """Stateful: CPU and network rates need the previous reading."""
 
-    def __init__(self, disks: list[str]):
+    def __init__(self, disks: list[str], smart: list[str] | None = None, smart_dir: str = ""):
         self.disks = disks
+        self.smart, self.smart_dir = smart or [], smart_dir
         self.prev_stat: dict = {}
         self.prev_net: tuple[float, tuple[int, int]] | None = None
         self.static = {"hostname": socket.gethostname(), "os": os_name(), "kernel": platform.release(),
@@ -194,6 +236,7 @@ class System:
 
         uptime = float(read("/proc/uptime", "0").split()[0])
         bat = battery()
+        gpu = gpus()
         snap = {
             **self.static,
             "ts": int(now),
@@ -208,6 +251,8 @@ class System:
             "temps": temps,
             "network": net,
             "battery": bat,
+            "gpus": gpu,
+            "smart": smart_mod.collect(self.smart_dir, self.smart) if self.smart else None,
         }
         samples = {
             "cpu": pct.get("cpu"), "load1": load[0], "ram": snap["memory"]["percent"],
@@ -218,4 +263,9 @@ class System:
             samples["disk" if d["mount"] == "/" else f"disk:{d['mount']}"] = d["percent"]
         if bat and bat["percent"] is not None:
             samples["battery"] = bat["percent"]
+        if gpu:
+            g = gpu[0]
+            samples.update(gpu=g["util"], gpu_temp=g["temp"],
+                           gpu_mem=round(100 * g["mem_used"] / g["mem_total"], 1)
+                           if g["mem_used"] is not None and g["mem_total"] else None)
         return snap, samples

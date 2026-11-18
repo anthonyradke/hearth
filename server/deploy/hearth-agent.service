@@ -1,0 +1,49 @@
+[Unit]
+Description=Hearth agent (lets the main Hearth server watch and control this machine)
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=hearth
+Group=hearth
+SupplementaryGroups=systemd-journal
+Environment=HEARTH_CONFIG=/etc/hearth/config.toml
+WorkingDirectory=/opt/hearth/app
+# HEARTH_LISTEN_HOST/PORT and the address allow-list come from net.conf, which install.sh writes from [agent]. The
+# address is the tailnet one, which may not exist yet at boot: uvicorn then exits and Restart= tries again.
+ExecStart=/opt/hearth/venv/bin/uvicorn --factory hearth.agent:app --host ${HEARTH_LISTEN_HOST} --port ${HEARTH_LISTEN_PORT} --no-access-log
+Restart=always
+RestartSec=5
+StateDirectory=hearth
+StateDirectoryMode=0750
+
+# Hardening, as hearth.service. Differences: no network at all except loopback and the server's address
+# (IPAddressDeny/Allow), and /dev stays visible but closed, so gpu.conf can open the NVIDIA devices for nvidia-smi.
+IPAddressDeny=any
+IPAddressAllow=localhost
+NoNewPrivileges=yes
+PrivateTmp=yes
+DevicePolicy=closed
+ProtectSystem=strict
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=no
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+UMask=0027
+MemoryMax=256M
+Nice=5
+
+[Install]
+WantedBy=multi-user.target

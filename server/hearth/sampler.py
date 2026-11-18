@@ -9,6 +9,7 @@ from .collectors import backups, network
 from .collectors.games import Games
 from .collectors.services import Services
 from .collectors.system import System, vnstat
+from .remote import Remote
 
 log = logging.getLogger("hearth")
 
@@ -26,6 +27,7 @@ class State:
     issues: list[dict] = field(default_factory=list)
     errors: dict[str, str] = field(default_factory=dict)
     heartbeat: dict | None = None
+    hosts: dict[str, dict] = field(default_factory=dict)  # remote host id → its Remote.state
     updated: dict[str, int] = field(default_factory=dict)
     started: int = field(default_factory=lambda: int(time.time()))
 
@@ -38,10 +40,13 @@ class Sampler:
         self.cfg, self.db = cfg, db
         self.state = state or State()
         self.alerts = alerts  # called with the issue list after every evaluation; .event() for one-offs
-        self.system = System(cfg.disks)
+        self.system = System(cfg.disks, cfg.smart, cfg.smart_dir)
         self.services = Services(cfg.services)
         self.games = Games(cfg.games, db)
         self.pihole = network.PiHole(cfg.pihole_url, cfg.pihole_password)
+        self.remotes: dict[str, Remote] = {h.id: Remote(h, db) for h in cfg.hosts}
+        for hid, r in self.remotes.items():
+            self.state.hosts[hid] = r.state
         self.lock = threading.Lock()  # jobs run one at a time, whether from the loop or an API request
         self.stop_event = threading.Event()
         self.thread: threading.Thread | None = None
@@ -55,7 +60,7 @@ class Sampler:
             ("public_ip", iv["public_ip"], self.do_public_ip),
             ("rollup", 300, self.db.rollup),
             ("heartbeat", cfg.alerts.heartbeat_seconds, self.do_heartbeat),
-        ]
+        ] + [(f"host:{hid}", iv["services"], (lambda hid=hid: self.do_remote(hid))) for hid in self.remotes]
         self.due = {name: 0.0 for name, _, _ in self.jobs}
         self.prev_health: dict[str, tuple[str, str | None]] = {}
 
@@ -65,8 +70,8 @@ class Sampler:
         self.state.system = snap
         self.db.record(samples)
 
-    def do_services(self):
-        svcs, samples = self.services.collect()
+    def service_events(self, svcs: list[dict]) -> None:
+        """Records a service changing health, or restarting in between two samples."""
         for s in svcs:
             prev = self.prev_health.get(s["unit"])
             cur = (s["health"], s["invocation"])
@@ -75,6 +80,12 @@ class Sampler:
             elif prev and cur[0] == "ok" and prev[1] and cur[1] and prev[1] != cur[1]:
                 self.db.event("service", s["unit"], "restarted")
             self.prev_health[s["unit"]] = cur
+
+    def do_services(self):
+        svcs, samples = self.services.collect()
+        for s in svcs:
+            s.update(host=self.cfg.name, systemd_unit=s["unit"], section=s["group"])
+        self.service_events(svcs)
         self.state.services = svcs
         self.db.record(samples)
 
@@ -117,6 +128,36 @@ class Sampler:
             self.db.put("public_ip", prev)
         self.state.public_ip = {**(prev or {}), "reachable": ip is not None}
 
+    def do_remote(self, hid: str):
+        """One poll of a remote host's agent. Not answering isn't a collector error: rules.py turns a host that stays
+        silent into an "unreachable" issue."""
+        r = self.remotes[hid]
+        snap = r.poll()  # outside the lock: a host that's down can take the whole timeout to fail
+        if snap is None:
+            return
+        with self.lock:
+            if r.state["services"] is not None:
+                self.service_events(r.state["services"])
+            for e in snap.get("events") or []:
+                self.db.event(e["kind"], e["subject"], e["detail"], ts=e.get("ts"))
+            self.db.record(r.samples(snap))
+
+    def refresh_remote(self, hid: str) -> None:
+        self.do_remote(hid)
+
+    def all_services(self) -> list[dict]:
+        out = list(self.state.services or [])
+        for r in self.remotes.values():
+            out += r.state.get("services") or []
+        return out
+
+    def all_games(self) -> list[dict]:
+        out = list(self.state.games or [])
+        local = {g["id"] for g in out}
+        for r in self.remotes.values():
+            out += [g for g in r.state.get("games") or [] if g["id"] not in local]
+        return out
+
     def do_heartbeat(self):
         if self.cfg.alerts.heartbeat_url:
             self.state.heartbeat = {"ok": heartbeat(self.cfg.alerts.heartbeat_url), "ts": int(time.time())}
@@ -136,8 +177,11 @@ class Sampler:
                 continue
             self.due[name] = now + interval
             try:
-                with self.lock:
-                    fn()
+                if name.startswith("host:"):
+                    fn()  # takes the lock itself, only around the bookkeeping
+                else:
+                    with self.lock:
+                        fn()
                 self.state.errors.pop(name, None)
                 self.state.updated[name] = int(time.time())
             except Exception as e:  # one broken collector must not stop the others

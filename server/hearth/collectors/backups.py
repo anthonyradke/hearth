@@ -16,8 +16,13 @@ def _t(v: str | None) -> int | None:
         return None
 
 
+def _age(ts: int | None) -> float | None:
+    return round((time.time() - ts) / 3600, 1) if ts else None
+
+
 def parse_status(d: dict) -> dict:
-    """Keeps the shape of status.json but turns timestamps into epoch seconds, which is what the app uses."""
+    """Keeps the shape of status.json but turns timestamps into epoch seconds, which is what the app uses. "local" is
+    the second copy cellar writes to the other machine's disk, with the same jobs as the offsite one."""
     def job(j: dict | None) -> dict | None:
         if not j:
             return None
@@ -27,6 +32,12 @@ def parse_status(d: dict) -> dict:
                 j[k] = _t(j[k])
         return j
 
+    loc = d.get("local")
+    local = None
+    if isinstance(loc, dict):
+        local = {"updated": _t(loc.get("updated")), "last_success": _t(loc.get("last_success")),
+                 **{k: job(loc.get(k)) for k in ("backup", "frequent", "check", "drill", "repo")}}
+        local["age_hours"] = _age(local["last_success"])
     return {
         "schema": d.get("schema"),
         "updated": _t(d.get("updated")),
@@ -37,6 +48,7 @@ def parse_status(d: dict) -> dict:
         "drill": job(d.get("drill")),
         "repo": job(d.get("repo")),
         "sources": sorted(d.get("sources") or [], key=lambda s: -(s.get("bytes") or 0)),
+        "local": local,
     }
 
 
@@ -56,6 +68,5 @@ def collect(path: str) -> dict:
             "last": _ts(b.get("LastTriggerUSec"))} for b in parse_show(r.stdout) if b.get("Id")}
     except (OSError, subprocess.TimeoutExpired):
         out["timers"] = {}
-    ls = out.get("last_success")
-    out["age_hours"] = round((time.time() - ls) / 3600, 1) if ls else None
+    out["age_hours"] = _age(out.get("last_success"))
     return out

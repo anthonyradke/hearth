@@ -37,7 +37,9 @@ def test_unit_actions_follow_config(client):
     assert client.post("/api/services/nope/restart", headers=H).status_code == 404
     assert client.post("/api/services/valheim/restart").status_code == 401
     assert client.calls == [("stop", "valheim"), ("restart", "tally")]
-    assert [a["action"] for a in client.db.audits()] == ["restart", "stop"]
+    audits = [(a["action"], a["target"], a["result"]) for a in reversed(client.db.audits())]
+    assert audits == [("stop", "valheim", "ok"), ("restart", "tally", "ok"), ("stop", "tally", "failed"),
+                      ("restart", "ssh", "failed"), ("restart", "nope", "failed")]
 
 
 def test_valheim_lists(client):

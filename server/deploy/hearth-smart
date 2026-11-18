@@ -1,0 +1,22 @@
+#!/bin/sh
+# Saves `smartctl --json -a` for each device as <dir>/<name>.json, which Hearth reads (it can't run smartctl itself:
+# that needs root). Run by hearth-smart.service, which install.sh writes when the config lists devices under smart.
+#   hearth-smart /var/lib/hearth-smart /dev/sda /dev/nvme0n1
+# -n standby: a disk that's spun down isn't woken. smartctl then exits 0 without SMART data, and the previous file
+# stays. Exit bits 0-1 mean smartctl couldn't run at all; the higher bits flag disk problems, which Hearth reads from
+# the JSON itself, so those files are kept.
+set -u
+dir=$1
+shift
+for dev in "$@"; do
+    out="$dir/$(basename "$dev").json"
+    smartctl --json=c -a -n standby,0 "$dev" > "$out.tmp" 2>/dev/null
+    rc=$?
+    if [ $((rc & 3)) -eq 0 ] && grep -q '"smart_status"' "$out.tmp"; then
+        chmod 644 "$out.tmp"
+        mv "$out.tmp" "$out"
+    else
+        rm -f "$out.tmp"
+        [ $((rc & 3)) -eq 0 ] || echo "smartctl failed on $dev (exit $rc)" >&2
+    fi
+done

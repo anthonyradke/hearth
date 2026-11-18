@@ -48,6 +48,9 @@ class DB:
                 self.con.execute("PRAGMA journal_mode=WAL")
             self.con.execute("PRAGMA synchronous=NORMAL")
             self.con.executescript(SCHEMA)
+            cols = {r[1] for r in self.con.execute("PRAGMA table_info(alerts)")}
+            if "host" not in cols:  # added with remote hosts; '' = this machine
+                self.con.execute("ALTER TABLE alerts ADD COLUMN host TEXT NOT NULL DEFAULT ''")
 
     def q(self, sql: str, args=()) -> list[sqlite3.Row]:
         with self.lock:

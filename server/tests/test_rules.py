@@ -72,3 +72,23 @@ def test_flapping(cfg, db):
         db.event("service", "valheim", "restarted", ts=now - i * 60)
     out = rules.evaluate(State(services=[svc("valheim", "ok")]), cfg, db, now)
     assert ids(out) == ["flap:valheim"]
+
+
+def test_smart_gpu_and_local_backup_rules(cfg, db):
+    st = State(system={"disks": [], "temps": {"cpu": 50},
+                       "gpus": [{"name": "GPU", "temp": 95}],
+                       "smart": [{"device": "/dev/sda", "passed": True, "pending": 3, "reallocated": 0},
+                                 {"device": "/dev/sdb", "passed": False},
+                                 {"device": "/dev/nvme0n1", "passed": True, "percent_used": 95},
+                                 {"device": "/dev/sdc", "error": "no SMART data yet"}]},
+               backups={"available": True, "age_hours": 3, "backup": {"result": "ok"},
+                        "local": {"age_hours": 2, "backup": {"result": "failed", "error": "unreachable"},
+                                  "frequent": {"result": "ok"}}})
+    got = {i["id"]: i for i in rules.evaluate(st, cfg, db)}
+    assert got["smart:/dev/sdb"]["severity"] == "critical"
+    assert got["smart:/dev/sda"]["title"] == "A disk has bad sectors"
+    assert got["smart:/dev/nvme0n1"]["title"] == "SSD 95% worn"
+    assert "smart:/dev/sdc" not in got
+    assert got["gpu_temp:0"]["severity"] == "warning"
+    assert got["backup_local"]["severity"] == "warning" and "backup" not in got
+    assert all(i["host"] == cfg.name for i in got.values())

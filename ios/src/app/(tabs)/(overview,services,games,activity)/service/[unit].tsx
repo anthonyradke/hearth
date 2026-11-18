@@ -58,7 +58,8 @@ function Body({ s }: { s: ServiceDetail }) {
       {running && s.memory != null && <MetricChart title="Memory" metric={`mem:${s.unit}`} format={(v) => bytes(v)} now={s.memory} />}
 
       <Group header="Details">
-        <Row label="Unit" value={<Txt variant="body" tone="label2" selectable style={mono}>{s.unit}</Txt>} />
+        {s.host && <Row label="Runs on" value={s.host} />}
+        <Row label="Unit" value={<Txt variant="body" tone="label2" selectable style={mono}>{s.systemd_unit ?? s.unit}</Txt>} />
         {running && <Row label="Memory" value={bytes(s.memory)} />}
         {running && <Row label="CPU" value={s.cpu == null ? '–' : pct(s.cpu, s.cpu < 10 ? 1 : 0)} sub="Of one core" />}
         {timer && <Row label="Next run" value={when(s.next_run)} />}
@@ -77,7 +78,9 @@ function Body({ s }: { s: ServiceDetail }) {
         </Group>
       )}
 
-      <Journal lines={s.journal} />
+      {s.journal_error
+        ? <Group header="Log" footer={s.journal_error}><Row label="Couldn’t read the log" sub={`${s.host ?? 'The machine'} didn’t answer`} /></Group>
+        : <Journal lines={s.journal} />}
     </View>
   )
 }

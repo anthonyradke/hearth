@@ -1,6 +1,13 @@
 # Hearth config. Installed as /etc/hearth/config.toml (root:hearth 640). Everything machine-specific lives here,
 # never in the repo.
 
+# server (the default): the backend the app talks to. agent: a second machine the server watches; see the end of
+# this file for what an agent's config needs.
+role = "server"
+
+# How this machine is labelled in the app and in alerts. Defaults to the hostname.
+name = "box"
+
 # The Tailscale login allowed to use the API. Tailscale Serve adds a Tailscale-User-Login header to every request
 # from a tailnet device; requests without this exact value are refused. Leave empty to turn the check off (tests,
 # local development only).
@@ -11,6 +18,10 @@ token_file = "/etc/hearth/token"
 
 # Mount points to watch.
 disks = ["/"]
+
+# Disks whose SMART health to show and alert on. Needs smartmontools; install.sh adds a root timer that saves
+# smartctl's output for Hearth to read. Leave empty to skip.
+smart = []
 
 # Seconds between samples.
 [sample]
@@ -134,3 +145,22 @@ grace_warning = 300
 remind_hours = 6              # repeat critical alerts while they last (0 = never)
 # healthchecks.io ping URL. Pinged every minute; healthchecks.io alerts you when the pings stop (server down).
 heartbeat_url = ""
+
+# Other machines to watch. Each runs the Hearth agent (role = "agent") and is polled every 30 s. Its units and game
+# servers come from its own config. token_file holds a copy of that machine's /etc/hearth/token (root:hearth 640).
+# [[host]]
+# id = "box2"                       # lowercase letters, digits and dashes; prefixes its units and history keys
+# name = "box2"
+# url = "http://100.64.0.2:8011"    # the agent's [agent] listen address
+# token_file = "/etc/hearth/hosts/box2.token"
+# unreachable_seconds = 90          # no answer for this long = a critical "box2 is unreachable" alert
+
+# ---------- On an agent machine ----------
+# role = "agent"
+# name = "box2"
+# disks, smart, [[service]] and [[game]] as above. [pihole], [cellar], [public_ip], [rules] and [alerts] are ignored:
+# the server applies its own rules and sends the alerts.
+# [agent]
+# listen = "100.64.0.2:8011"        # this machine's tailnet address; nothing else is listened on
+# allow = ["100.64.0.1"]            # the server's tailnet address (loopback is always allowed)
+# token_file = "/etc/hearth/token"

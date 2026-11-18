@@ -1,9 +1,14 @@
-"""Loads /etc/hearth/config.toml (or $HEARTH_CONFIG). Everything specific to the machine comes from here."""
+"""Loads /etc/hearth/config.toml (or $HEARTH_CONFIG). Everything specific to the machine comes from here.
+
+role = "server" (the default) runs the full backend: API, history, rules, alerts, and polls any [[host]] agents.
+role = "agent" runs only the small agent (agent.py) on a second machine, which the server polls over the tailnet."""
 from __future__ import annotations
-import os, tomllib
+import os, re, socket, tomllib
 from dataclasses import dataclass, field
 
 ACTIONS = ("none", "restart", "full")
+ROLES = ("server", "agent")
+HOST_ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,30}$")
 
 
 @dataclass
@@ -28,6 +33,24 @@ class Game:
 
 
 @dataclass
+class RemoteHost:
+    """A machine running the Hearth agent, polled by the server."""
+    id: str
+    url: str                       # http://<tailnet ip>:<port>, no trailing slash
+    token_file: str
+    name: str = ""
+    timeout: float = 5
+    unreachable_seconds: float = 90  # no good poll for this long = the host is unreachable
+
+
+@dataclass
+class AgentCfg:
+    listen: str = "127.0.0.1:8011"   # host:port; on a real install the machine's tailnet IP
+    allow: list[str] = field(default_factory=list)  # client IPs allowed besides loopback (the server's tailnet IP)
+    token_file: str = "/etc/hearth/token"
+
+
+@dataclass
 class Rules:
     disk_warn: float = 85
     disk_crit: float = 95
@@ -41,6 +64,8 @@ class Rules:
     backup_max_age_hours: float = 36
     check_max_age_days: float = 8      # weekly
     drill_max_age_days: float = 33     # monthly
+    gpu_temp_c: float = 90
+    ssd_wear_pct: float = 90           # NVMe "percentage used"
 
 
 @dataclass
@@ -60,10 +85,14 @@ class AlertsCfg:
 
 @dataclass
 class Config:
+    role: str = "server"
+    name: str = ""                     # how this machine is labelled in the app; defaults to the hostname
     owner: str = ""
     db: str = "/var/lib/hearth/hearth.db"
     token_file: str = "/etc/hearth/token"
     disks: list[str] = field(default_factory=lambda: ["/"])
+    smart: list[str] = field(default_factory=list)  # devices whose SMART data hearth-smart.timer records
+    smart_dir: str = "/var/lib/hearth-smart"
     sample: dict[str, int] = field(default_factory=lambda: {
         "system": 30, "services": 30, "games": 60, "network": 60, "public_ip": 600})
     services: list[Service] = field(default_factory=list)
@@ -74,6 +103,8 @@ class Config:
     public_ip_url: str = "https://api.ipify.org"
     rules: Rules = field(default_factory=Rules)
     alerts: AlertsCfg = field(default_factory=AlertsCfg)
+    hosts: list[RemoteHost] = field(default_factory=list)
+    agent: AgentCfg = field(default_factory=AgentCfg)
 
     def service(self, unit: str) -> Service | None:
         return next((s for s in self.services if s.unit == unit), None)
@@ -81,12 +112,18 @@ class Config:
     def game(self, gid: str) -> Game | None:
         return next((g for g in self.games if g.id == gid), None)
 
+    def host(self, hid: str) -> RemoteHost | None:
+        return next((h for h in self.hosts if h.id == hid), None)
+
 
 def parse(raw: dict) -> Config:
     c = Config()
-    for k in ("owner", "db", "token_file", "disks"):
+    for k in ("role", "name", "owner", "db", "token_file", "disks", "smart", "smart_dir"):
         if k in raw:
             setattr(c, k, raw[k])
+    if c.role not in ROLES:
+        raise ValueError(f"role must be one of {ROLES}")
+    c.name = c.name or socket.gethostname()
     c.sample.update(raw.get("sample", {}))
     c.services = [Service(**s) for s in raw.get("service", [])]
     for s in c.services:
@@ -103,6 +140,17 @@ def parse(raw: dict) -> Config:
     c.public_ip_url = raw.get("public_ip", {}).get("url", c.public_ip_url)
     c.rules = Rules(**raw.get("rules", {}))
     c.alerts = AlertsCfg(**raw.get("alerts", {}))
+    c.hosts = [RemoteHost(**h) for h in raw.get("host", [])]
+    for h in c.hosts:
+        if not HOST_ID.match(h.id):
+            raise ValueError(f"host {h.id!r}: id must be lowercase letters, digits and dashes")
+        if h.id == c.name:
+            raise ValueError(f"host {h.id!r}: same name as this machine")
+        h.name = h.name or h.id
+        h.url = h.url.rstrip("/")
+    if len({h.id for h in c.hosts}) != len(c.hosts):
+        raise ValueError("two [[host]] entries share an id")
+    c.agent = AgentCfg(**raw.get("agent", {}))
     return c
 
 

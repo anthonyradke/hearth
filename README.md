@@ -12,7 +12,7 @@
   <img src="https://img.shields.io/badge/FastAPI-SQLite-009688?logo=fastapi&logoColor=white" alt="FastAPI and SQLite">
 </p>
 
-Hearth monitors a single Linux server and the services on it from an iPhone. It replaces SSHing in to run
+Hearth monitors a Linux server and the services on it from an iPhone, plus any other machines that run its small agent. It replaces SSHing in to run
 `uptime`, `sensors` and `systemctl status` with one screen, and it sends an alert when something needs attention.
 It was written for a laptop that hosts Minecraft and Valheim servers, Pi-hole and several self-hosted apps.
 
@@ -27,6 +27,9 @@ There are two parts:
   and the state of the nightly backups. It keeps 48 hours of raw samples and 90 days of 5-minute averages in SQLite.
 - `ios/`, a native iOS app (Expo / React Native) that talks to the backend over Tailscale.
 
+A second machine runs the same package as an agent: no history, alerts or app of its own, just its collectors and
+actions behind a token, polled by the main server over the tailnet.
+
 ## Features
 
 - Overview answers "is everything fine?" in one line, then shows CPU, memory, disk, temperature, network and power
@@ -38,6 +41,7 @@ There are two parts:
 - Activity is a feed of joins, leaves, service changes, alerts and every action taken from the app.
 - Every chart can be scrubbed with a finger, across ranges from 1 hour to 90 days.
 - Alerts go out through [ntfy](https://ntfy.sh), with grace periods, repeats and quiet hours.
+- Other machines appear as their own sections, with the same controls, GPU load and SMART disk health.
 
 ## Requirements
 
@@ -54,6 +58,9 @@ sudo nano /etc/hearth/config.toml
 sudo ./install.sh            # installs to /opt/hearth, starts hearth.service, runs a self-test
 sudo cat /etc/hearth/token   # entered in the app once
 ```
+
+On a second machine, set `role = "agent"` and an `[agent]` section in its config, run the same `install.sh` there,
+then add a `[[host]]` entry with that machine's token to the server's config and re-run `install.sh` on the server.
 
 Everything machine-specific (units, game servers, RCON passwords, the Pi-hole app password, thresholds) lives in
 `/etc/hearth/config.toml`; `server/config.example.toml` documents each setting. `install.sh` is safe to re-run after any
@@ -81,6 +88,7 @@ flowchart LR
 | `server/hearth/actions.py`, `rcon.py` | Unit start/stop/restart, Minecraft RCON, Valheim list edits |
 | `server/hearth/auth.py` | Bearer token plus the Tailscale identity check |
 | `server/hearth/api.py` | The JSON API |
+| `server/hearth/agent.py`, `remote.py` | The agent on another machine, and the server's client for it |
 | `ios/src/app` | Screens, one file per route (Expo Router) |
 | `ios/src/lib` | API client, formatting, status logic and actions |
 
@@ -97,8 +105,9 @@ Every action, including refused ones, is written to an audit log.
 
 ### Alerts
 
-Rules cover a unit that should be running and isn't, disk, memory, CPU temperature, running on battery, Tailscale key
-expiry, a failed or stale backup and Pi-hole not answering. A condition has to hold for a grace period before it's
+Rules cover a unit that should be running and isn't, disk, memory, CPU and GPU temperature, SMART disk health,
+running on battery, Tailscale key expiry, a failed or stale backup, Pi-hole not answering and a watched machine that
+stops answering. Alerts about another machine carry its name as the title. A condition has to hold for a grace period before it's
 sent: 90 seconds for critical, 5 minutes for warnings, so a quick restart never pages. Each alert is sent once,
 repeated every 6 hours while still critical, and followed by a "Resolved" message. During quiet hours warnings wait
 until morning and are dropped if they clear first; critical alerts always go out. Message text stays vague because
@@ -111,9 +120,10 @@ minute and healthchecks.io alerts when the pings stop.
 
 JSON under `/api`. `/api/ping` is the only route that doesn't need auth.
 
-- Reading: `overview`, `system`, `issues`, `services`, `services/{unit}` (with recent journal lines), `games`,
+- Reading: `overview`, `hosts`, `hosts/{id}`, `system`, `issues`, `services`, `services/{unit}` (with recent journal lines), `games`,
   `games/{id}`, `network`, `backups`, `history?key=cpu&range=24h` (1h, 6h, 24h, 7d, 30d, 90d), `events`, `alerts`,
   `audit`.
+- Another machine's units are addressed as `<host>/<unit>`; its history keys are `<host>/cpu` and `mem:<host>/<unit>`.
 - Changing things: `POST services/{unit}/{start|stop|restart}` (only what the config allows for that unit),
   `POST games/{id}/rcon`, `GET/POST/DELETE games/{id}/lists/...` for Valheim's lists, and `POST alerts/test`.
 
@@ -134,12 +144,14 @@ echo 'EXPO_PUBLIC_HEARTH_URL=https://<server>.<tailnet>.ts.net:8446' > .env.loca
 npx expo start --port 8083
 ```
 
+[docs/architecture.md](docs/architecture.md) covers the agent and how the server polls it.
 [docs/development.md](docs/development.md) covers running the app on a phone and previewing layouts in a browser.
 `ios/DESIGN.md` covers the design decisions.
 
 ## Known limitations
 
-- One server and one owner. There's no multi-host view or multi-user access.
+- One owner. Other machines are watched through the server, so when the server is down nothing reports them; each
+  machine needs its own healthchecks.io-style heartbeat for that.
 - Linux with systemd only; collectors read `/proc`, `/sys`, `lm-sensors` and the journal directly.
 - Game support is Minecraft (via RCON) and Valheim (via its list files and logs).
 - Apps signed with a free Apple ID expire after 7 days and have to be reinstalled from Xcode, and push notifications

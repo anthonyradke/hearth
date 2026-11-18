@@ -93,7 +93,8 @@ function Body({ g }: { g: GameDetail }) {
         )}
         {g.world && <Row label="World" value={g.world} />}
         {g.running && <Row label="Memory" value={bytes(g.memory)} />}
-        <Row label="Service" value={g.unit} href={`/service/${encodeURIComponent(g.unit)}` as never} />
+        {g.host && <Row label="Runs on" value={g.host} />}
+        <Row label="Service" value={svc?.systemd_unit ?? g.unit} href={`/service/${encodeURIComponent(g.unit)}` as never} />
       </Group>
 
       {g.events.length > 0 && (

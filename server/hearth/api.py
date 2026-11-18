@@ -1,9 +1,14 @@
-"""Read-only JSON API. Every route except /api/ping needs auth (see auth.py)."""
+"""Read-only JSON API. Every route except /api/ping needs auth (see auth.py).
+
+With remote hosts ([[host]] in the config), the lists (/services, /games, /overview's counts and issues) cover every
+machine; each item says which host it's on. Remote units are addressed as "<host>/<unit>". /hosts gives one summary
+per machine, this one first, and /hosts/{id} the full system snapshot for one."""
 from __future__ import annotations
 import time
 from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from . import __version__
+from .actions import OpError
 from .auth import check
 from .collectors.services import journal
 from .db import RANGES
@@ -37,6 +42,55 @@ def with_address(g: dict, st) -> dict:
     return {**g, "address": addr or None}
 
 
+def host_spark(db, prefix: str) -> dict[str, list[float]]:
+    keys = ("cpu", "ram", "disk", "temp", "net_rx", "net_tx", "battery", "gpu")
+    return {k: spark(db, prefix + k) for k in keys}
+
+
+def counts(svcs: list[dict]) -> dict[str, int]:
+    out = {"total": len(svcs)}
+    for s in svcs:
+        out[s["health"]] = out.get(s["health"], 0) + 1
+    return out
+
+
+def root_disk(sysm: dict) -> dict | None:
+    disks = sysm.get("disks") or []
+    return next((d for d in disks if d["mount"] == "/"), disks[0] if disks else None)
+
+
+def host_summary(request: Request, hid: str) -> dict:
+    """One machine at a glance: reachability, its issues, the headline numbers and sparklines."""
+    cfg, st, db = _cfg(request), _st(request), _db(request)
+    local = hid == cfg.name
+    if local:
+        sysm, svcs, info = st.system or {}, st.services or [], {"reachable": True, "last_ok": (st.system or {}).get("ts"),
+                                                                 "error": None, "errors": st.errors}
+        name = cfg.name
+    else:
+        h = st.hosts.get(hid)
+        if h is None:
+            raise HTTPException(404, "unknown host")
+        sysm, svcs, name = h.get("system") or {}, h.get("services") or [], h["name"]
+        info = {k: h.get(k) for k in ("reachable", "last_ok", "error", "errors", "version")}
+    mine = [i for i in st.issues if i.get("host") == hid]
+    return {
+        "id": hid, "name": name, "local": local, **info,
+        "status": {"level": level(mine), "issues": mine},
+        "host": {k: sysm.get(k) for k in ("hostname", "os", "kernel", "cores", "uptime", "boot")},
+        "cpu": sysm.get("cpu"), "memory": sysm.get("memory"), "disk": root_disk(sysm), "disks": sysm.get("disks"),
+        "temps": sysm.get("temps"), "battery": sysm.get("battery"), "network": sysm.get("network"),
+        "gpus": sysm.get("gpus"), "smart": sysm.get("smart"),
+        "spark": host_spark(db, "" if local else f"{hid}/"),
+        "services": counts(svcs),
+        "ts": sysm.get("ts"),
+    }
+
+
+def host_ids(request: Request) -> list[str]:
+    return [_cfg(request).name] + [h.id for h in _cfg(request).hosts]
+
+
 def level(issues: list[dict]) -> str:
     if any(i["severity"] == "critical" for i in issues):
         return "critical"
@@ -50,40 +104,58 @@ def ping():
 
 @router.get("/overview")
 def overview(request: Request, who: Who):
-    st, db = _st(request), _db(request)
+    st, db, sampler = _st(request), _db(request), request.app.state.sampler
     sysm = st.system or {}
-    svcs = st.services or []
-    counts = {"total": len(svcs)}
-    for s in svcs:
-        counts[s["health"]] = counts.get(s["health"], 0) + 1
     b = st.backups or {}
-    root = next((d for d in sysm.get("disks", []) if d["mount"] == "/"), (sysm.get("disks") or [None])[0])
+    loc = b.get("local") or {}
     return {
         "host": {k: sysm.get(k) for k in ("hostname", "os", "kernel", "cores", "uptime", "boot")},
         "status": {"level": level(st.issues), "issues": st.issues},
         "cpu": sysm.get("cpu"),
         "memory": sysm.get("memory"),
-        "disk": root,
+        "disk": root_disk(sysm),
         "temps": sysm.get("temps"),
         "battery": sysm.get("battery"),
         "network": sysm.get("network"),
         "spark": {k: spark(db, k) for k in ("cpu", "ram", "disk", "temp", "net_rx", "net_tx", "battery")},
-        "services": counts,
+        "services": counts(sampler.all_services()),
         "games": [{k: g.get(k) for k in ("id", "name", "kind", "running", "health", "since", "version",
-                                         "max_players")} | {"players": len(g["players"])} for g in st.games or []],
+                                         "max_players", "host")} | {"players": len(g["players"])}
+                  for g in sampler.all_games()],
         "backups": {"available": b.get("available"), "last_success": b.get("last_success"),
                     "result": (b.get("backup") or {}).get("result"), "age_hours": b.get("age_hours"),
-                    "next": ((b.get("timers") or {}).get("backup") or {}).get("next")},
+                    "next": ((b.get("timers") or {}).get("backup") or {}).get("next"),
+                    "local": {"last_success": loc.get("last_success"),
+                              "result": (loc.get("backup") or {}).get("result")} if loc else None},
         "dns": {k: (st.pihole or {}).get(k) for k in ("dns", "percent_blocked", "queries", "configured")},
+        "hosts": [host_summary(request, hid) for hid in host_ids(request)],
         "errors": st.errors,
         "ts": sysm.get("ts") or int(time.time()),
     }
 
 
+@router.get("/hosts")
+def hosts(request: Request, who: Who):
+    return {"hosts": [host_summary(request, hid) for hid in host_ids(request)]}
+
+
+def _host_system(request: Request, hid: str) -> dict:
+    cfg, st = _cfg(request), _st(request)
+    if hid == cfg.name:
+        return {**(st.system or {}), "traffic": st.traffic}
+    if hid not in st.hosts:
+        raise HTTPException(404, "unknown host")
+    return {**(st.hosts[hid].get("system") or {}), "traffic": None}
+
+
+@router.get("/hosts/{hid}")
+def host(hid: str, request: Request, who: Who):
+    return {**host_summary(request, hid), "system": _host_system(request, hid)}
+
+
 @router.get("/system")
-def system(request: Request, who: Who):
-    st = _st(request)
-    return {**(st.system or {}), "traffic": st.traffic}
+def system(request: Request, who: Who, host: str | None = None):
+    return _host_system(request, host or _cfg(request).name)
 
 
 @router.get("/issues")
@@ -94,30 +166,43 @@ def issues(request: Request, who: Who):
 
 @router.get("/services")
 def services(request: Request, who: Who):
-    cfg = _cfg(request)
-    groups = list(dict.fromkeys(s.group for s in cfg.services))
-    return {"groups": groups, "services": _st(request).services or []}
+    cfg, sampler = _cfg(request), request.app.state.sampler
+    svcs = sampler.all_services()
+    groups = list(dict.fromkeys([s.group for s in cfg.services] + [s["group"] for s in svcs]))
+    return {"groups": groups, "services": svcs,
+            "hosts": [{"id": cfg.name, "name": cfg.name, "local": True}]
+            + [{"id": h.id, "name": h.name, "local": False, "reachable": (_st(request).hosts.get(h.id) or {}).get("reachable")}
+               for h in cfg.hosts]}
 
 
-@router.get("/services/{unit}")
+@router.get("/services/{unit:path}")
 def service(unit: str, request: Request, who: Who, lines: int = Query(100, ge=1, le=1000)):
-    s = next((s for s in _st(request).services or [] if s["unit"] == unit), None)
+    sampler = request.app.state.sampler
+    s = next((s for s in sampler.all_services() if s["unit"] == unit), None)
     if not s:
         raise HTTPException(404, "unknown service")
     events = _db(request).q("SELECT * FROM events WHERE kind='service' AND subject=? ORDER BY id DESC LIMIT 30",
                             (unit,))
-    return {**s, "journal": journal(unit, lines), "events": [dict(e) for e in events]}
+    extra = {}
+    if s.get("host") in sampler.remotes:
+        try:
+            extra["journal"] = sampler.remotes[s["host"]].journal(s["systemd_unit"], lines)
+        except OpError as e:
+            extra = {"journal": [], "journal_error": e.detail}
+    else:
+        extra["journal"] = journal(unit, lines)
+    return {**s, **extra, "events": [dict(e) for e in events]}
 
 
 @router.get("/games")
 def games(request: Request, who: Who):
     st = _st(request)
-    return {"games": [with_address(g, st) for g in st.games or []]}
+    return {"games": [with_address(g, st) for g in request.app.state.sampler.all_games()]}
 
 
 @router.get("/games/{gid}")
 def game(gid: str, request: Request, who: Who):
-    g = next((g for g in _st(request).games or [] if g["id"] == gid), None)
+    g = next((g for g in request.app.state.sampler.all_games() if g["id"] == gid), None)
     if not g:
         raise HTTPException(404, "unknown game")
     db = _db(request)
