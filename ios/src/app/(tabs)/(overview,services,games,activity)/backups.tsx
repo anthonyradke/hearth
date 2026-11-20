@@ -1,5 +1,8 @@
+import { useLocalSearchParams } from 'expo-router'
+import { useState } from 'react'
 import { RefreshControl, ScrollView, View } from 'react-native'
 import { Dot } from '@/components/Dot'
+import { Segmented } from '@/components/native/Segmented'
 import { Group, Row } from '@/components/Row'
 import { StaleBanner, StateView } from '@/components/StateView'
 import { Txt } from '@/components/Txt'
@@ -9,14 +12,29 @@ import { ago, bytes, count, span, when } from '@/lib/format'
 import { mono, space, useTheme } from '@/theme'
 
 export default function Backups() {
+  // host: open on another machine's backups (?host=h5, from one of its issues).
+  const params = useLocalSearchParams<{ host?: string }>()
   const q = useBackups()
   const pull = usePull(q)
   const { c } = useTheme()
+  const hosts = q.data?.hosts ?? []
+  const [picked, setPicked] = useState<string | undefined>(params.host)
+  const current = hosts.find((h) => h.id === picked) ?? hosts.find((h) => h.local)
+  const b = current?.backups ?? q.data
   return (
     <ScrollView contentInsetAdjustmentBehavior="automatic" style={{ backgroundColor: c.bg }}
-      contentContainerStyle={{ padding: space.l, paddingBottom: 120 }} refreshControl={<RefreshControl {...pull} />}>
+      contentContainerStyle={{ padding: space.l, paddingBottom: 120, gap: space.m }} refreshControl={<RefreshControl {...pull} />}>
       <StaleBanner q={q} />
-      {q.data ? <Body b={q.data} /> : <StateView q={q} shape="detail" />}
+      {hosts.length > 1 && (
+        <Segmented options={hosts.map((h) => [h.id, h.name] as [string, string])} value={current?.id ?? hosts[0].id}
+          onChange={setPicked} />
+      )}
+      {current && !current.local && current.reachable === false && (
+        <Txt variant="callout" tone="label2" style={{ paddingHorizontal: space.xs }}>
+          {current.name} isn’t answering; this is the last status it sent.
+        </Txt>
+      )}
+      {b ? <Body b={b} /> : <StateView q={q} shape="detail" />}
     </ScrollView>
   )
 }

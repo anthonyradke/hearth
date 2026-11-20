@@ -6,7 +6,7 @@ import { Group, Row } from '@/components/Row'
 import { StaleBanner, StateView } from '@/components/StateView'
 import { Tile } from '@/components/Tile'
 import { Txt } from '@/components/Txt'
-import type { HostSummary, Issue, Overview } from '@/lib/api'
+import type { BackupSummary, HostSummary, Issue, Overview } from '@/lib/api'
 import { useOverview, usePull } from '@/lib/data'
 import { ago, bits, bytes, count, pct, span, temp, when } from '@/lib/format'
 import { gameLabel, healthColor, issueFor, levelColor, metricHref, remoteOf } from '@/lib/status'
@@ -31,6 +31,9 @@ export default function OverviewScreen() {
   )
 }
 
+const backupState = (b: BackupSummary) =>
+  b.available === false ? 'Unreadable' : b.result === 'failed' ? 'Failed' : b.last_success ? ago(b.last_success) : 'Never'
+
 /** Where an issue's row goes when tapped. A remote host's machine issues are "<host>:<rule>". */
 function issueHref(i: Issue, local?: string): string | undefined {
   if (i.id.startsWith('unit:') || i.id.startsWith('flap:')) return `/service/${encodeURIComponent(i.target ?? '')}`
@@ -44,6 +47,7 @@ function issueHref(i: Issue, local?: string): string | undefined {
   if (rule === 'power') return metricHref('battery', host)
   if (i.target === 'network') return '/network'
   if (i.target === 'backups') return '/backups'
+  if (i.target?.startsWith('backups:')) return `/backups?host=${encodeURIComponent(i.target.slice(8))}`
   return undefined
 }
 
@@ -142,9 +146,16 @@ function Body({ o }: { o: Overview }) {
             sub={off ? `${off} stopped on purpose` : undefined} />
           <Row label="Network" sf="network" md="lan" href="/network"
             value={o.dns.dns === false ? 'DNS down' : o.dns.percent_blocked != null ? `${pct(o.dns.percent_blocked)} blocked` : 'DNS OK'} />
-          <Row label="Backups" sf="externaldrive.badge.icloud" md="backup" href="/backups"
-            value={o.backups.result === 'failed' ? 'Failed' : o.backups.last_success ? ago(o.backups.last_success) : 'Never'}
-            sub={o.backups.next ? `Next ${when(o.backups.next)}` : undefined} />
+          {(o.backups.hosts?.length ?? 0) > 1 ? (
+            // One line per machine: "x1 2 hours ago · h5 Failed"
+            <Row label="Backups" sf="externaldrive.badge.icloud" md="backup" href="/backups"
+              value={o.backups.hosts!.some((b) => b.result === 'failed') ? 'Failed' : `${o.backups.hosts!.length} machines`}
+              sub={o.backups.hosts!.map((b) => `${hostName(b.id)} ${backupState(b)}`).join(' · ')} />
+          ) : (
+            <Row label="Backups" sf="externaldrive.badge.icloud" md="backup" href="/backups"
+              value={backupState(o.backups)}
+              sub={o.backups.next ? `Next ${when(o.backups.next)}` : undefined} />
+          )}
         </Group>
       </View>
 

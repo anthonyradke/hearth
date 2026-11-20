@@ -93,46 +93,51 @@ def remote(h: dict, hcfg, r, db, now: float, started: float) -> list[dict]:
                       f"host:{h['id']}", h["id"])]
     if last is None:
         return []  # just started; give it a moment
-    return machine(h.get("system") or {}, h.get("services") or [], r, db, now, h["id"])
+    return (machine(h.get("system") or {}, h.get("services") or [], r, db, now, h["id"])
+            + backups(h.get("backups") or {}, r, now, h["id"]))
 
 
-def backups(b: dict, r, now: float) -> list[dict]:
+def backups(b: dict, r, now: float, host: str = "") -> list[dict]:
+    """cellar's status on one machine. host = "" for this machine; a remote host's ids get its prefix ("h5:backup")
+    and its issues point at "backups:<host>"."""
     out: list[dict] = []
+    pre = f"{host}:" if host else ""
+    target = f"backups:{host}" if host else "backups"
+
+    def add(rule: str, severity: str, title: str, detail: str = ""):
+        out.append(issue(pre + rule, severity, title, detail, target, host))
+
     if not b.get("available"):
         if b:
-            out.append(issue("backup", WARN, "Backup status unreadable", b.get("error", ""), "backups"))
+            add("backup", WARN, "Backup status unreadable", b.get("error", ""))
         return out
     last = (b.get("backup") or {})
     if last.get("result") == "failed":
-        out.append(issue("backup", CRIT, "Last backup failed", last.get("error") or "", "backups"))
+        add("backup", CRIT, "Last backup failed", last.get("error") or "")
     elif b.get("age_hours") is not None and b["age_hours"] > r.backup_max_age_hours:
-        out.append(issue("backup", WARN, f"No backup for {b['age_hours']:.0f} hours", "", "backups"))
+        add("backup", WARN, f"No backup for {b['age_hours']:.0f} hours")
     elif last.get("result") == "partial":
-        out.append(issue("backup", WARN, "Last backup was partial", last.get("error") or "", "backups"))
+        add("backup", WARN, "Last backup was partial", last.get("error") or "")
     if (b.get("frequent") or {}).get("result") == "failed":
-        out.append(issue("backup_frequent", WARN, "Half-hourly backup failed", b["frequent"].get("error") or "",
-                         "backups"))
+        add("backup_frequent", WARN, "Half-hourly backup failed", b["frequent"].get("error") or "")
     for job, max_days in (("check", r.check_max_age_days), ("drill", r.drill_max_age_days)):
         j = b.get(job) or {}
         last_run = j.get("finished") or j.get("started")
         if j.get("result") == "failed":
-            out.append(issue(f"backup_{job}", WARN, f"Backup {job} failed", j.get("error") or "", "backups"))
+            add(f"backup_{job}", WARN, f"Backup {job} failed", j.get("error") or "")
         elif last_run and now - last_run > max_days * 86400:
-            out.append(issue(f"backup_{job}", WARN, f"No backup {job} for {(now - last_run) / 86400:.0f} days",
-                             "", "backups"))
+            add(f"backup_{job}", WARN, f"No backup {job} for {(now - last_run) / 86400:.0f} days")
     # The second, local copy (on the other machine's disk). Only warnings: the offsite copy still covers it.
     loc = b.get("local")
     if loc:
         lb = loc.get("backup") or {}
         if lb.get("result") == "failed":
-            out.append(issue("backup_local", WARN, "Local backup copy failed", lb.get("error") or "", "backups"))
+            add("backup_local", WARN, "Local backup copy failed", lb.get("error") or "")
         elif loc.get("age_hours") is not None and loc["age_hours"] > r.backup_max_age_hours:
-            out.append(issue("backup_local", WARN, f"No local backup copy for {loc['age_hours']:.0f} hours", "",
-                             "backups"))
+            add("backup_local", WARN, f"No local backup copy for {loc['age_hours']:.0f} hours")
         for job in ("frequent", "check", "drill"):
             if (loc.get(job) or {}).get("result") == "failed":
-                out.append(issue(f"backup_local_{job}", WARN, f"Local backup copy: {job} failed",
-                                 loc[job].get("error") or "", "backups"))
+                add(f"backup_local_{job}", WARN, f"Local backup copy: {job} failed", loc[job].get("error") or "")
     return out
 
 

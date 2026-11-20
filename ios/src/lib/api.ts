@@ -44,7 +44,10 @@ export interface Overview {
   spark: Record<'cpu' | 'ram' | 'disk' | 'temp' | 'net_rx' | 'net_tx' | 'battery', number[]>
   services: { total: number } & Partial<Record<Health, number>>
   games: { id: string; name: string; kind: GameKind; running: boolean; health: Health; since: number | null; version: string | null; max_players: number | null; players: number; host?: string }[]
-  backups: { available?: boolean; last_success: number | null; result: string | null; age_hours: number | null; next: number | null; local?: { last_success: number | null; result: string | null } | null }
+  backups: BackupSummary & {
+    /** Every machine that runs cellar, this server first. Absent from servers older than per-host backups. */
+    hosts?: (BackupSummary & { id: string })[]
+  }
   dns: { dns?: boolean; percent_blocked?: number | null; queries?: number | null; configured?: boolean }
   /** Absent from servers older than remote-host support. */
   hosts?: HostSummary[]
@@ -95,6 +98,7 @@ export interface Network {
   interface: NetRates | null
 }
 
+export interface BackupSummary { available?: boolean; last_success: number | null; result: string | null; age_hours: number | null; next: number | null; local?: { last_success: number | null; result: string | null } | null }
 export interface Job { started: number | null; finished: number | null; result: string; error: string | null }
 export interface Backups {
   available: boolean; error?: string; schema?: number; updated?: number | null; last_success?: number | null
@@ -111,6 +115,10 @@ export interface Backups {
     backup: (Job & { bytes_added?: number }) | null; frequent: Job | null; check: Job | null; drill: Job | null
     repo: { snapshots: number; size_bytes: number; measured: number | null } | null
   } | null
+  /** Which machine the top-level fields describe (the server's own). */
+  host?: string
+  /** Every machine that runs cellar, this server first. Absent from servers older than per-host backups. */
+  hosts?: { id: string; name: string; local: boolean; reachable?: boolean | null; backups: Backups }[]
 }
 
 export type Range = '1h' | '6h' | '24h' | '7d' | '30d' | '90d'

@@ -158,8 +158,9 @@ heartbeat_url = ""
 # ---------- On an agent machine ----------
 # role = "agent"
 # name = "box2"
-# disks, smart, [[service]] and [[game]] as above. [pihole], [cellar], [public_ip], [rules] and [alerts] are ignored:
-# the server applies its own rules and sends the alerts.
+# disks, smart, [[service]], [[game]] and [cellar] as above (the server shows this machine's backups when its cellar
+# state directory exists). [pihole], [public_ip], [rules] and [alerts] are ignored: the server applies its own rules
+# and sends the alerts.
 # [agent]
 # listen = "100.64.0.2:8011"        # this machine's tailnet address; nothing else is listened on
 # allow = ["100.64.0.1"]            # the server's tailnet address (loopback is always allowed)

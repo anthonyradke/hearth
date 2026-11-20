@@ -1,8 +1,8 @@
 """The Hearth agent: runs on a second machine (role = "agent") and lets the main Hearth server watch and control it.
 
 It has no history, rules, alerts or app of its own. The server polls GET /agent/snapshot every 30 s over the tailnet;
-each poll runs this machine's collectors (system, services, games) and returns the result plus any player joins and
-leaves since the last poll. Actions (start/stop/restart, the Minecraft console, Valheim lists) are checked against this
+each poll runs this machine's collectors (system, services, games, and cellar's backup status if this machine runs
+cellar) and returns the result plus any player joins and leaves since the last poll. Actions (start/stop/restart, the Minecraft console, Valheim lists) are checked against this
 machine's own config, so the server can never make it do more than its config allows. RCON stays on localhost: the
 agent is the only thing that talks to it.
 
@@ -11,12 +11,13 @@ The unit adds a firewall of its own (IPAddressAllow), and listens on the tailnet
 
 Run: uvicorn --factory hearth.agent:app (config from $HEARTH_CONFIG)."""
 from __future__ import annotations
-import hmac, logging, secrets, threading, time
+import hmac, logging, os, secrets, threading, time
 from collections import deque
 from fastapi import APIRouter, Body, Depends, FastAPI, HTTPException, Query, Request
 from . import __version__, config
 from .actions import OpError, list_change, list_ids, rcon_command, unit_verb
 from .auth import load_token
+from .collectors import backups as cellar
 from .collectors.games import Games
 from .collectors.services import Services, journal
 from .collectors.system import System
@@ -39,7 +40,7 @@ class Agent:
 
     def snapshot(self, since: int = 0) -> dict:
         errors, samples = {}, {}
-        system = services = games = None
+        system = services = games = backups = None
         with self.lock:
             try:
                 system, s = self.system.collect()
@@ -64,9 +65,16 @@ class Agent:
                 except Exception as e:
                     log.exception("games collector failed")
                     errors["games"] = f"{type(e).__name__}: {e}"
+            # A machine without cellar (no state directory at all) sends null, so it doesn't read as a failure.
+            if os.path.isdir(os.path.dirname(self.cfg.cellar_status)):
+                try:
+                    backups = cellar.collect(self.cfg.cellar_status)
+                except Exception as e:
+                    log.exception("backups collector failed")
+                    errors["backups"] = f"{type(e).__name__}: {e}"
             events = [e for e in self.events if e["id"] > since]
         return {"app": "hearth-agent", "version": __version__, "instance": self.instance, "seq": self.seq,
-                "ts": int(time.time()), "system": system, "services": services, "games": games,
+                "ts": int(time.time()), "system": system, "services": services, "games": games, "backups": backups,
                 "samples": {k: v for k, v in samples.items() if v is not None}, "events": events, "errors": errors}
 
 

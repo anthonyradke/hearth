@@ -106,8 +106,6 @@ def ping():
 def overview(request: Request, who: Who):
     st, db, sampler = _st(request), _db(request), request.app.state.sampler
     sysm = st.system or {}
-    b = st.backups or {}
-    loc = b.get("local") or {}
     return {
         "host": {k: sysm.get(k) for k in ("hostname", "os", "kernel", "cores", "uptime", "boot")},
         "status": {"level": level(st.issues), "issues": st.issues},
@@ -122,11 +120,9 @@ def overview(request: Request, who: Who):
         "games": [{k: g.get(k) for k in ("id", "name", "kind", "running", "health", "since", "version",
                                          "max_players", "host")} | {"players": len(g["players"])}
                   for g in sampler.all_games()],
-        "backups": {"available": b.get("available"), "last_success": b.get("last_success"),
-                    "result": (b.get("backup") or {}).get("result"), "age_hours": b.get("age_hours"),
-                    "next": ((b.get("timers") or {}).get("backup") or {}).get("next"),
-                    "local": {"last_success": loc.get("last_success"),
-                              "result": (loc.get("backup") or {}).get("result")} if loc else None},
+        "backups": {**backup_summary(st.backups or {}),
+                    "hosts": [{"id": hid, **s} for hid in host_ids(request)
+                              if (s := backup_summary(host_backups(request, hid))) is not None]},
         "dns": {k: (st.pihole or {}).get(k) for k in ("dns", "percent_blocked", "queries", "configured")},
         "hosts": [host_summary(request, hid) for hid in host_ids(request)],
         "errors": st.errors,
@@ -218,9 +214,45 @@ def network(request: Request, who: Who):
             "interface": ((st.system or {}).get("network"))}
 
 
+def host_backups(request: Request, hid: str) -> dict | None:
+    """cellar's status on one machine: None if that machine doesn't run cellar (or its agent hasn't said yet)."""
+    cfg, st = _cfg(request), _st(request)
+    if hid == cfg.name:
+        return st.backups or {"available": False}
+    if hid not in st.hosts:
+        raise HTTPException(404, "unknown host")
+    return st.hosts[hid].get("backups")
+
+
+def backup_summary(b: dict | None) -> dict | None:
+    if b is None:
+        return None
+    loc = b.get("local") or {}
+    return {"available": b.get("available"), "last_success": b.get("last_success"),
+            "result": (b.get("backup") or {}).get("result"), "age_hours": b.get("age_hours"),
+            "next": ((b.get("timers") or {}).get("backup") or {}).get("next"),
+            "local": {"last_success": loc.get("last_success"),
+                      "result": (loc.get("backup") or {}).get("result")} if loc else None}
+
+
 @router.get("/backups")
-def backups(request: Request, who: Who):
-    return _st(request).backups or {"available": False}
+def backups(request: Request, who: Who, host: str | None = None):
+    """This machine's status at the top level (what the app read before there were hosts), plus every machine that
+    runs cellar under "hosts". With ?host=, that one machine."""
+    cfg, st = _cfg(request), _st(request)
+    if host:
+        b = host_backups(request, host)
+        if b is None:
+            raise HTTPException(404, "no backups on that host")
+        return {**b, "host": host}
+    hosts = []
+    for hid in host_ids(request):
+        b = host_backups(request, hid)
+        if b is not None:
+            remote = st.hosts.get(hid) or {}
+            hosts.append({"id": hid, "name": remote.get("name", hid), "local": hid == cfg.name,
+                          "reachable": True if hid == cfg.name else remote.get("reachable"), "backups": b})
+    return {**host_backups(request, cfg.name), "host": cfg.name, "hosts": hosts}
 
 
 @router.get("/history")

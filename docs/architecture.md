@@ -7,7 +7,8 @@ stops answering.
 
 ## The agent
 
-`server/hearth/agent.py` reuses the server's collectors (system, services, games) and the operations from `actions.py`
+`server/hearth/agent.py` reuses the server's collectors (system, services, games, and cellar's `status.json` when the
+machine has cellar's state directory; otherwise `backups` is null) and the operations from `actions.py`
 (start/stop/restart, Minecraft RCON, Valheim lists). It keeps no history and sends no alerts.
 
 - `GET /agent/snapshot?since=<id>&instance=<id>` runs the collectors and returns the result, the samples to record, and
@@ -37,8 +38,11 @@ can't hold up local collection or actions. Its data is renamed so it can't clash
 | Unit history keys | `mem:valheim.service` | `mem:h/valheim.service` |
 | Game ids, `players:<id>` | as configured | as configured on the agent (unique across machines) |
 | Machine issue ids | `ram`, `disk:/` | `h:ram`, `h:disk:/` |
+| Backup issue ids, target | `backup`, `backups` | `h:backup`, `backups:h` |
 
-`/api/services`, `/api/games` and `/api/overview` merge every machine; each item carries `host`. Remote services also
+`/api/services`, `/api/games` and `/api/overview` merge every machine; each item carries `host`. `/api/backups` keeps
+the server's own status at the top level and lists every machine that runs cellar under `hosts`
+(`[{id, name, local, reachable, backups}]`); `/api/backups?host=h` returns one machine. Remote services also
 carry `systemd_unit` (the plain name) and `section` (the group without the host prefix); their `group` is prefixed
 with the host name so older apps that group by it keep the machines apart.
 

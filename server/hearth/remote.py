@@ -33,7 +33,7 @@ class Remote:
         self.seq: int = seen.get("seq", 0)
         self.state: dict = {"id": self.id, "name": self.name, "reachable": None, "last_ok": None, "last_try": None,
                             "error": None, "version": None, "system": None, "services": None, "games": None,
-                            "errors": {}}
+                            "backups": None, "errors": {}}
 
     # ---------- transport ----------
     def _req(self, method: str, path: str, body: dict | None = None, timeout: float | None = None) -> dict:
@@ -74,6 +74,8 @@ class Remote:
         self.db.put(f"remote_seq:{self.id}", {"instance": self.instance, "seq": self.seq})
         self.state.update(reachable=True, last_ok=int(now), error=None, version=snap.get("version"),
                           system=snap.get("system"), errors=snap.get("errors") or {},
+                          # An agent from before backups were added sends no key at all: keep "unknown" (None).
+                          backups=snap.get("backups"),
                           services=[self.service(s) for s in snap.get("services") or []]
                           if snap.get("services") is not None else self.state["services"],
                           games=[self.game(g) for g in snap.get("games") or []]

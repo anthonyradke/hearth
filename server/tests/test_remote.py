@@ -59,6 +59,7 @@ def agent_cfg(tmp_path):
     return config.parse({
         "role": "agent", "name": "h5",
         "agent": {"listen": "127.0.0.1:8011", "allow": ["testclient"], "token_file": str(tmp_path / "token")},
+        "cellar": {"status": str(tmp_path / "cellar" / "status.json")},  # no such directory unless a test makes it
         "service": [{"unit": "mheynautics.service", "name": "Mheynautics", "actions": "full"},
                     {"unit": "ssh.service", "name": "SSH"}],
         "game": [{"id": "mheynautics", "kind": "minecraft", "name": "Mheynautics", "unit": "mheynautics.service",
@@ -242,6 +243,59 @@ def test_remote_issues_are_prefixed(server):
     s.do_remote("h5")
     ids = {i["id"]: i for i in rules.evaluate(s.state, s.cfg, s.db)}
     assert "unit:h5/mheynautics.service" in ids and ids["unit:h5/mheynautics.service"]["host"] == "h5"
+
+
+def _cellar(tmp_path, monkeypatch, status: dict | None):
+    from hearth.collectors import backups
+    monkeypatch.setattr(backups.subprocess, "run", lambda *a, **k: (_ for _ in ()).throw(OSError("no systemctl")))
+    (tmp_path / "cellar").mkdir()
+    if status is not None:
+        (tmp_path / "cellar" / "status.json").write_text(json.dumps(status))
+
+
+def test_machine_without_cellar_has_no_backups(server):
+    server.sampler.do_remote("h5")
+    assert server.sampler.state.hosts["h5"]["backups"] is None
+    b = server.get("/api/backups", headers=H).json()
+    assert [h["id"] for h in b["hosts"]] == ["x1"] and b["host"] == "x1"
+    assert server.get("/api/backups?host=h5", headers=H).status_code == 404
+    assert server.get("/api/backups?host=nope", headers=H).status_code == 404
+    assert [h["id"] for h in server.get("/api/overview", headers=H).json()["backups"]["hosts"]] == ["x1"]
+
+
+def test_remote_backups(server, tmp_path, monkeypatch):
+    now = time.time()
+    iso = lambda t: time.strftime("%Y-%m-%dT%H:%M:%S+00:00", time.gmtime(t))
+    _cellar(tmp_path, monkeypatch, {
+        "schema": 1, "updated": iso(now), "last_success": iso(now - 86400),
+        "backup": {"started": iso(now - 600), "finished": iso(now - 500), "result": "failed", "error": "b2 said no"},
+        "check": {"started": iso(now - 3600), "finished": iso(now - 3500), "result": "ok"},
+        "repo": {"snapshots": 12, "size_bytes": 1000}, "sources": [{"path": "/srv/data", "bytes": 5}]})
+    s = server.sampler
+    s.do_remote("h5")
+    b = server.get("/api/backups", headers=H).json()
+    assert [h["id"] for h in b["hosts"]] == ["x1", "h5"]
+    h5 = b["hosts"][1]
+    assert h5["local"] is False and h5["reachable"] is True and h5["backups"]["backup"]["result"] == "failed"
+    assert h5["backups"]["repo"]["snapshots"] == 12 and h5["backups"]["age_hours"] == 24.0
+    one = server.get("/api/backups?host=h5", headers=H).json()
+    assert one["host"] == "h5" and one["available"] is True and one["backup"]["error"] == "b2 said no"
+    assert server.get("/api/backups?host=x1", headers=H).json()["host"] == "x1"
+    ov = server.get("/api/overview", headers=H).json()["backups"]
+    assert [(h["id"], h["result"]) for h in ov["hosts"]][1] == ("h5", "failed")
+    issues = {i["id"]: i for i in rules.evaluate(s.state, s.cfg, s.db, now)}
+    assert issues["h5:backup"]["severity"] == "critical" and issues["h5:backup"]["host"] == "h5"
+    assert issues["h5:backup"]["target"] == "backups:h5"
+    assert "backup" not in issues or issues["backup"]["host"] == "x1"
+
+
+def test_remote_backups_unreadable(server, tmp_path, monkeypatch):
+    _cellar(tmp_path, monkeypatch, None)  # cellar's directory, but no status file
+    s = server.sampler
+    s.do_remote("h5")
+    assert s.state.hosts["h5"]["backups"]["available"] is False
+    issues = {i["id"]: i for i in rules.evaluate(s.state, s.cfg, s.db)}
+    assert issues["h5:backup"]["severity"] == "warning" and issues["h5:backup"]["title"] == "Backup status unreadable"
 
 
 def test_alert_titles_name_the_host(server):
