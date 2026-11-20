@@ -4,13 +4,13 @@ version = "0.1.0"
 description = "Status, history, alerts and controls for one home server"
 requires-python = ">=3.13"
 dependencies = [
-  "fastapi>=0.115",
+  "fastapi>=0.165",
   "uvicorn[standard]>=0.32",
 ]
 
 [dependency-groups]
 dev = [
-  "httpx>=0.28.1",
+  "httpx2>=2.16",
   "pytest>=8",
 ]
 
