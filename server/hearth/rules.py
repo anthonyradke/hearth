@@ -138,6 +138,11 @@ def backups(b: dict, r, now: float, host: str = "") -> list[dict]:
         for job in ("frequent", "check", "drill"):
             if (loc.get(job) or {}).get("result") == "failed":
                 add(f"backup_local_{job}", WARN, f"Local backup copy: {job} failed", loc[job].get("error") or "")
+    drift = b.get("drift") or {}
+    if drift.get("result") == "drift":
+        gap = drift.get("gap_hours")
+        add("backup_drift", WARN, "Backup copies don't match",
+            "; ".join(drift.get("problems") or []) or (f"{gap:.0f} hours apart" if gap is not None else ""))
     return out
 
 

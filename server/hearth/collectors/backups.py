@@ -32,6 +32,14 @@ def parse_status(d: dict) -> dict:
                 j[k] = _t(j[k])
         return j
 
+    drift = d.get("drift")
+    if isinstance(drift, dict):
+        # The off-site repository and the local copy compared after each nightly ("ok" or "drift").
+        drift = {**drift, "measured": _t(drift.get("measured")),
+                 **{side: {**drift[side], "newest": _t(drift[side].get("newest"))}
+                    for side in ("off_site", "local") if isinstance(drift.get(side), dict)}}
+    else:
+        drift = None
     loc = d.get("local")
     local = None
     if isinstance(loc, dict):
@@ -49,6 +57,7 @@ def parse_status(d: dict) -> dict:
         "repo": job(d.get("repo")),
         "sources": sorted(d.get("sources") or [], key=lambda s: -(s.get("bytes") or 0)),
         "local": local,
+        "drift": drift,
     }
 
 

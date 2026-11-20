@@ -115,6 +115,12 @@ export interface Backups {
     backup: (Job & { bytes_added?: number }) | null; frequent: Job | null; check: Job | null; drill: Job | null
     repo: { snapshots: number; size_bytes: number; measured: number | null } | null
   } | null
+  /** The off-site repository and the local copy compared after each nightly. */
+  drift?: {
+    measured: number | null; result: 'ok' | 'drift' | string; problems?: string[]; gap_hours?: number | null
+    off_site?: { snapshots: number; newest: number | null }; local?: { snapshots: number; newest: number | null }
+    compared_since?: string
+  } | null
   /** Which machine the top-level fields describe (the server's own). */
   host?: string
   /** Every machine that runs cellar, this server first. Absent from servers older than per-host backups. */

@@ -222,3 +222,14 @@ def test_cellar_local_copy():
     assert loc["backup"]["result"] == "ok" and loc["backup"]["finished"] == 1794975654
     assert loc["frequent"]["result"] == "failed" and loc["age_hours"] > 0 and loc["check"] is None
     assert backups.parse_status({"schema": 1})["local"] is None
+
+
+def test_cellar_drift():
+    d = backups.parse_status({"schema": 1, "drift": {
+        "measured": "2026-11-20T20:25:58+00:00", "result": "drift", "problems": ["nightly 2026-11-19: off-site only"],
+        "off_site": {"snapshots": 26, "newest": "2026-11-20T20:20:45.394582+00:00"},
+        "local": {"snapshots": 6, "newest": None}, "gap_hours": 13.5, "compared_since": "2026-11-19"}})
+    dr = d["drift"]
+    assert dr["measured"] == 1795206358 and dr["off_site"]["newest"] == 1795206045 and dr["local"]["newest"] is None
+    assert dr["result"] == "drift" and dr["problems"] == ["nightly 2026-11-19: off-site only"]
+    assert backups.parse_status({"schema": 1})["drift"] is None

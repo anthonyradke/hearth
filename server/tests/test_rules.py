@@ -92,3 +92,14 @@ def test_smart_gpu_and_local_backup_rules(cfg, db):
     assert got["gpu_temp:0"]["severity"] == "warning"
     assert got["backup_local"]["severity"] == "warning" and "backup" not in got
     assert all(i["host"] == cfg.name for i in got.values())
+
+
+def test_backup_drift_rule(cfg, db):
+    base = {"available": True, "age_hours": 3, "backup": {"result": "ok"}}
+    ok = State(backups={**base, "drift": {"result": "ok", "problems": [], "gap_hours": 0.0}})
+    assert not rules.evaluate(ok, cfg, db)
+    bad = State(backups={**base, "drift": {"result": "drift", "problems": ["nightly 2026-11-19: off-site only"]}})
+    (i,) = rules.evaluate(bad, cfg, db)
+    assert (i["id"], i["severity"], i["detail"]) == ("backup_drift", "warning", "nightly 2026-11-19: off-site only")
+    gap = State(backups={**base, "drift": {"result": "drift", "problems": [], "gap_hours": 13.4}})
+    assert rules.evaluate(gap, cfg, db)[0]["detail"] == "13 hours apart"

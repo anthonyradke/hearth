@@ -83,7 +83,7 @@ function Body({ b }: { b: B }) {
         {b.repo && <Row label="Stored" value={bytes(b.repo.size_bytes)} sub="After compression and deduplication" />}
       </Group>
 
-      {b.local && <LocalCopy l={b.local} />}
+      {b.local && <LocalCopy l={b.local} drift={b.drift} />}
 
       <Group header="Checks" footer="The weekly check reads back a different 1/52 of the stored data, so all of it once a year. The monthly drill restores a few files and verifies them.">
         <Row label="Integrity check" leading={<Dot color={b.check?.result === 'failed' ? c.neg : b.check ? c.pos : c.label3} />}
@@ -106,7 +106,7 @@ function Body({ b }: { b: B }) {
 }
 
 /** The second copy cellar keeps on the other machine's disk: same jobs, restores in minutes instead of days. */
-function LocalCopy({ l }: { l: NonNullable<B['local']> }) {
+function LocalCopy({ l, drift }: { l: NonNullable<B['local']>; drift?: B['drift'] }) {
   const { c } = useTheme()
   const dot = (j?: Job | null) => <Dot color={j?.result === 'failed' ? c.neg : j?.result === 'partial' ? c.warn : j ? c.pos : c.label3} />
   const line = (j?: Job | null) => (j ? RESULT[j.result] ?? j.result : 'Not run yet')
@@ -119,6 +119,13 @@ function LocalCopy({ l }: { l: NonNullable<B['local']> }) {
       <Row label="Integrity check" leading={dot(l.check)} value={line(l.check)} sub={l.check?.finished ? `Last ${when(l.check.finished)}` : undefined} />
       <Row label="Restore drill" leading={dot(l.drill)} value={line(l.drill)} sub={l.drill?.finished ? `Last ${when(l.drill.finished)}` : undefined} />
       {l.repo && <Row label="Stored" value={bytes(l.repo.size_bytes)} sub={`${l.repo.snapshots} snapshots`} />}
+      {drift && (
+        <Row label="Matches off-site" leading={<Dot color={drift.result === 'drift' ? c.warn : c.pos} />}
+          value={drift.result === 'drift' ? 'Differs' : 'Yes'}
+          sub={drift.result === 'drift'
+            ? (drift.problems?.length ? drift.problems.join('\n') : drift.gap_hours != null ? `${Math.round(drift.gap_hours)} hours apart` : undefined)
+            : drift.measured ? `Compared ${when(drift.measured)}` : undefined} />
+      )}
     </Group>
   )
 }
