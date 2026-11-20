@@ -4,7 +4,10 @@ from __future__ import annotations
 import json, re, subprocess, time
 from ..rcon import RconError, pool
 
-LIST_RE = re.compile(r"There are (\d+) of a max of (\d+) players online:?\s*(.*)", re.S)
+# One header line and the names on the same line. Minecraft's RCON shares one reply buffer between every client, so
+# when two `list` commands overlap (a lagging server, a retried command, another RCON tool) one reply can hold two
+# header lines; only the first one counts.
+LIST_RE = re.compile(r"There are (\d+) of a max of (\d+) players online:?[ \t]*([^\r\n]*)")
 MC_VERSION_RE = re.compile(r"Starting minecraft server version (\S+)")
 FABRIC_RE = re.compile(r"Loading Minecraft \S+ with Fabric Loader (\S+)")
 NEOFORGE_RE = re.compile(r"--fml\.neoForgeVersion, ([^,\]\s]+)")
@@ -21,8 +24,9 @@ def parse_list(text: str) -> tuple[int, int, list[str]] | None:
     m = LIST_RE.search(text)
     if not m:
         return None
-    names = [n.strip() for n in m.group(3).split(",") if n.strip()]
-    return int(m.group(1)), int(m.group(2)), names
+    count, most = int(m.group(1)), int(m.group(2))
+    names = [n.strip() for n in m.group(3).split(",") if n.strip()][:count]
+    return count, most, names
 
 
 def parse_mc_meta(lines: list[str]) -> dict:

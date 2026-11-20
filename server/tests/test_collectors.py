@@ -62,6 +62,20 @@ def test_minecraft_list():
     assert games.parse_list("Unknown command") is None
 
 
+def test_minecraft_list_merged_replies():
+    # Minecraft keeps one RCON reply buffer for every client, so two overlapping `list` commands come back as one
+    # reply with two header lines (both seen in Hearth's events before the fix). Only the first header counts.
+    one = "There are 0 of a max of 10 players online:\nThere are 0 of a max of 10 players online:"
+    assert games.parse_list(one) == (0, 10, [])
+    two = ("There are 2 of a max of 10 players online: Choco_Taco0, tonymode\n"
+           "There are 2 of a max of 10 players online: Choco_Taco0, tonymode")
+    assert games.parse_list(two) == (2, 10, ["Choco_Taco0", "tonymode"])
+    # The reply as the server sends it (captured over RCON): newline-terminated.
+    assert games.parse_list("There are 1 of a max of 10 players online: Choco_Taco0\n") == (1, 10, ["Choco_Taco0"])
+    # Never more names than the header's count.
+    assert games.parse_list("There are 1 of a max of 10 players online: A, B") == (1, 10, ["A"])
+
+
 def test_minecraft_meta():
     assert games.parse_mc_meta(["[00:10:51] [Server thread/INFO]: Starting minecraft server version 26.3"]) == {
         "version": "26.3"}

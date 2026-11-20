@@ -26,15 +26,20 @@ class Rcon:
 
     def _send(self, kind: int, body: str) -> str | None:
         self.rid += 1
-        payload = struct.pack("<ii", self.rid, kind) + body.encode("utf8") + b"\x00\x00"
+        rid = self.rid
+        payload = struct.pack("<ii", rid, kind) + body.encode("utf8") + b"\x00\x00"
         self.sock.sendall(struct.pack("<i", len(payload)) + payload)
         out = ""
         while True:
             length = struct.unpack("<i", self._recv(4))[0]
+            if not 10 <= length <= 1 << 20:
+                raise RconError(f"bad packet length {length}")
             data = self._recv(length)
             resp_id = struct.unpack("<i", data[:4])[0]
             if resp_id == -1:
                 return None
+            if resp_id != rid:
+                continue  # a late reply to an earlier request on this connection, not to this one
             out += data[8:-2].decode("utf8", "replace")
             # Long replies arrive as several packets; stop once nothing more is queued.
             self.sock.settimeout(0.2)
@@ -70,7 +75,9 @@ class Rcon:
 class Pool:
     """One long-lived connection per server. Minecraft logs a "Thread RCON Client started / shutting down" pair for
     every connection, so reconnecting every minute would fill its log. Thread-safe: the sampler and the console share
-    it. A broken connection is replaced once per command."""
+    it. A broken connection is replaced once per command, but a command that timed out is never sent again: the server
+    may still run it (it was only slow), and Minecraft keeps one reply buffer for all RCON clients, so a resent command
+    would run twice and both outputs would come back in one reply."""
 
     def __init__(self):
         self.conns: dict[tuple[str, int], Rcon] = {}
@@ -88,11 +95,11 @@ class Pool:
                     if conn is None:
                         conn = self.conns[key] = Rcon(host, port, password)
                     return conn.command(line)
-                except (OSError, RconError):
+                except (OSError, RconError) as e:
                     if conn:
                         conn.close()
                     self.conns.pop(key, None)
-                    if attempt == 2:
+                    if attempt == 2 or isinstance(e, TimeoutError):
                         raise
         raise RconError("unreachable")
 
